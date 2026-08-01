@@ -1140,60 +1140,9 @@ export default function CreateQuotation({
               </div>
             </FormCard>
 
-            {/* 4. Pricing Card */}
+            {/* 4. Project Timeline Card */}
             <FormCard
               sectionNumber="4"
-              title="Pricing"
-              subtitle="Discounts, warranty, and grand total calculations"
-              icon={<DollarSign size={20} />}
-            >
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormInput
-                    label="Discount (%)"
-                    type="number"
-                    inputMode="decimal"
-                    value={formData.pricing.discount}
-                    onChange={e => handleNestedChange("pricing", "discount", e.target.value)}
-                    placeholder="e.g. 5"
-                  />
-
-                  <FormInput
-                    label="Warranty Years"
-                    type="text"
-                    value={formData.pricing.warranty}
-                    onChange={e => handleNestedChange("pricing", "warranty", e.target.value)}
-                    placeholder="e.g. 3 Years Warranty"
-                  />
-                </div>
-
-                <div className="bg-slate-900 rounded-2xl p-5 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-800">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-emerald-400 shrink-0 font-black">
-                      ₹
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base text-white leading-tight">Auto Grand Total</h3>
-                      <p className="text-slate-400 text-xs mt-0.5 font-medium">Calculated amount across all rate categories</p>
-                    </div>
-                  </div>
-                  <div className="text-right w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
-                    <div className="text-2xl font-black text-emerald-400 tracking-tight">
-                      ₹{finalDiscountedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    {discountPercentNum > 0 && (
-                      <span className="text-[11px] text-slate-400 font-medium">
-                        (Includes {discountPercentNum}% Discount)
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </FormCard>
-
-            {/* 5. Project Timeline Card */}
-            <FormCard
-              sectionNumber="5"
               title="Project Timeline"
               subtitle="Estimated start date and completion schedule"
               icon={<Clock size={20} />}
@@ -1327,6 +1276,77 @@ export default function CreateQuotation({
                 </div>
               </div>
             </div>
+
+            {/* SECTION 4: Pricing (Discount %, Warranty Years & Final Grand Total) */}
+            <FormCard
+              sectionNumber="4"
+              title="Pricing"
+              subtitle="Discounts, warranty, and grand total calculations"
+              icon={<DollarSign size={20} />}
+            >
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormInput
+                    label="Discount (%)"
+                    type="number"
+                    inputMode="decimal"
+                    value={formData.pricing.discount}
+                    onChange={e => handleNestedChange("pricing", "discount", e.target.value)}
+                    placeholder="e.g. 5"
+                  />
+
+                  <FormInput
+                    label="Warranty Years"
+                    type="text"
+                    value={formData.pricing.warranty}
+                    onChange={e => handleNestedChange("pricing", "warranty", e.target.value)}
+                    placeholder="e.g. 3 Years Warranty"
+                  />
+                </div>
+
+                {/* Detailed Financial Calculation Breakdown Card */}
+                <div className="bg-slate-900 rounded-2xl p-5 text-white shadow-xl space-y-3 border border-slate-800">
+                  <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2.5">
+                    <span className="text-slate-400 font-medium">Rate Categories Subtotal</span>
+                    <span className="font-extrabold text-white">
+                      ₹{grandTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  {discountPercentNum > 0 && (
+                    <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2.5">
+                      <span className="text-slate-400 font-medium">Discount ({discountPercentNum}%)</span>
+                      <span className="font-extrabold text-red-400">
+                        - ₹{(grandTotalAmount * discountPercentNum / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-1">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center text-emerald-400 shrink-0 font-black">
+                        ₹
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-base text-white leading-tight">Final Auto Grand Total</h3>
+                        <p className="text-slate-400 text-xs mt-0.5 font-medium">Calculated amount after discount</p>
+                      </div>
+                    </div>
+                    <div className="text-right w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
+                      <div className="text-2xl font-black text-emerald-400 tracking-tight">
+                        ₹{finalDiscountedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      {discountPercentNum > 0 && (
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          (Includes {discountPercentNum}% Discount)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </FormCard>
+
           </div>
         )}
 
