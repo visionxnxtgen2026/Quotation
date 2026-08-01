@@ -16,7 +16,8 @@ export default function CompanyProfilesScreen({
   isOpen,
   onClose,
   onSelectProfile,
-  onProfilesUpdated
+  onProfilesUpdated,
+  goToCompanyWorkspace
 }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState(null);
@@ -26,7 +27,7 @@ export default function CompanyProfilesScreen({
 
   if (!isOpen) return null;
 
-  if (selectedWorkspaceId) {
+  if (selectedWorkspaceId && !goToCompanyWorkspace) {
     return (
       <CompanyWorkspaceScreen
         profileId={selectedWorkspaceId}
@@ -42,9 +43,11 @@ export default function CompanyProfilesScreen({
 
   const handleSelectCompany = (p) => {
     localDB.setActiveCompanyProfileId(p.id);
-    if (onSelectProfile) onSelectProfile(p);
-    if (onProfilesUpdated) onProfilesUpdated();
-    onClose();
+    if (goToCompanyWorkspace) {
+      goToCompanyWorkspace(p.id);
+    } else {
+      setSelectedWorkspaceId(p.id);
+    }
   };
 
   const handleSetDefault = (e, id) => {

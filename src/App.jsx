@@ -18,12 +18,15 @@ import BottomNavigation from "./components/mobile/BottomNavigation";
 import MobileLayout from "./components/mobile/MobileLayout";
 import { admobManager } from "./utils/admobManager";
 
+import CompanyWorkspaceScreen from "./components/settings/CompanyWorkspaceScreen";
+
 export default function App() {
   const [consentReady, setConsentReady] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [page, setPage] = useState("dashboard");
   const [createStep, setCreateStep] = useState(1);
   const [quotationId, setQuotationId] = useState(null);
+  const [companyWorkspaceId, setCompanyWorkspaceId] = useState(null);
 
   // Navigation History Stack to track full route state
   const historyStackRef = useRef([{ page: "dashboard", step: 1 }]);
@@ -43,6 +46,14 @@ export default function App() {
         if (idFromUrl) {
           setQuotationId(idFromUrl);
           setPage("preview");
+          return;
+        }
+      }
+      if (path.startsWith("/settings/company/")) {
+        const idFromUrl = path.replace("/settings/company/", "");
+        if (idFromUrl) {
+          setCompanyWorkspaceId(idFromUrl);
+          setPage("company-workspace");
           return;
         }
       }
@@ -165,6 +176,10 @@ export default function App() {
     goToStorage: () => pushState("storage", 1),
     goToEditProfile: () => pushState("edit-profile", 1),
     goToSettings: () => pushState("settings", 1),
+    goToCompanyWorkspace: (companyId) => {
+      setCompanyWorkspaceId(companyId);
+      pushState(`settings/company/${companyId}`, 1);
+    },
     goToHelp: () => pushState("help", 1),
     goBack: handleBack,
   };
@@ -234,6 +249,16 @@ export default function App() {
 
       {page === "settings" && (
         <Settings {...navProps} goBack={handleBack} />
+      )}
+
+      {page === "company-workspace" && (
+        <CompanyWorkspaceScreen
+          profileId={companyWorkspaceId}
+          onBack={() => navProps.goToSettings()}
+          onSaved={() => {
+            window.dispatchEvent(new Event("quotationDataUpdated"));
+          }}
+        />
       )}
 
       {page === "help" && (

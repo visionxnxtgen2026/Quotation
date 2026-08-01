@@ -16,7 +16,7 @@ import {
  */
 export default function Settings({
   goToDashboard, goToCreate, goToPreview, goToExport,
-  goToSettings, goToEditProfile, goToStorage, goToHelp
+  goToSettings, goToEditProfile, goToStorage, goToHelp, goToCompanyWorkspace
 }) {
   const [activeSubPage, setActiveSubPage] = useState("menu"); // "menu" | "profiles" | "cloud" | "export" | "prefs" | "about"
   const [profiles, setProfiles] = useState([]);
@@ -43,6 +43,7 @@ export default function Settings({
         onClose={() => setActiveSubPage("menu")}
         onSelectProfile={() => refreshData()}
         onProfilesUpdated={() => refreshData()}
+        goToCompanyWorkspace={goToCompanyWorkspace}
       />
     );
   }
