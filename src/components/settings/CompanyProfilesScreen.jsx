@@ -6,6 +6,8 @@ import {
 import { localDB } from "../../utils/localDB";
 import CreateCompanyModal from "./CreateCompanyModal";
 
+import CompanyWorkspaceScreen from "./CompanyWorkspaceScreen";
+
 /**
  * 🏢 CompanyProfilesScreen Component
  * Workspace-like dedicated management screen for company profiles.
@@ -20,8 +22,21 @@ export default function CompanyProfilesScreen({
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(null);
 
   if (!isOpen) return null;
+
+  if (selectedWorkspaceId) {
+    return (
+      <CompanyWorkspaceScreen
+        profileId={selectedWorkspaceId}
+        onBack={() => setSelectedWorkspaceId(null)}
+        onSaved={() => {
+          if (onProfilesUpdated) onProfilesUpdated();
+        }}
+      />
+    );
+  }
 
   const profiles = localDB.getCompanyProfiles();
 
