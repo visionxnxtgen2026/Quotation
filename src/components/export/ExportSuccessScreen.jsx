@@ -340,8 +340,8 @@ export default function ExportSuccessScreen({
           delay={0.58}
           icon={<Share2 size={22} />}
           iconBg="bg-violet-50 text-violet-600"
-          title="Share &amp; Permissions"
-          desc="Manage Google Drive link access (Public / Private)"
+          title="Share"
+          desc="Share via Google Drive link (Public or Private)"
           onClick={handleOpenShareModal}
           disabled={!blob}
         />
