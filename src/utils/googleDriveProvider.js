@@ -9,16 +9,22 @@ import { localDB } from "./localDB";
  * No private server storage is used.
  */
 
-const DEFAULT_CLIENT_ID = "1048602283896-demo.apps.googleusercontent.com";
+const DEFAULT_CLIENT_ID = "282167349922-86tv666uiaglf6mlqp3dq53nrgagrhqs.apps.googleusercontent.com";
 const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
 const getClientId = () => {
-  return (
+  const clientId = (
     import.meta.env?.VITE_GOOGLE_CLIENT_ID ||
     window.ENV_GOOGLE_CLIENT_ID ||
     localStorage.getItem("gdrive_custom_client_id") ||
     DEFAULT_CLIENT_ID
-  );
+  )?.trim();
+
+  if (!clientId || clientId.includes("demo")) {
+    console.error("[GoogleDrive OAuth Error] Invalid or missing Google Client ID. Check VITE_GOOGLE_CLIENT_ID in .env");
+  }
+
+  return clientId;
 };
 
 export class GoogleDriveProvider extends BaseStorageProvider {
@@ -73,17 +79,32 @@ export class GoogleDriveProvider extends BaseStorageProvider {
   async authenticate() {
     if (await this.isConnected()) return this.accessToken;
 
+    const clientId = getClientId();
+    console.log("--------------------------------------------------");
+    console.log("[GoogleDrive OAuth Init] Starting Google OAuth 2.0 Flow...");
+    console.log("[GoogleDrive OAuth Init] Current Origin:", window.location.origin);
+    console.log("[GoogleDrive OAuth Init] Loaded Client ID:", clientId);
+    console.log("--------------------------------------------------");
+
     return new Promise((resolve, reject) => {
       if (window.google?.accounts?.oauth2) {
         const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: getClientId(),
+          client_id: clientId,
           scope: SCOPES,
           callback: async (response) => {
             if (response.error) {
+              console.error("[GoogleDrive OAuth Error Details]:", {
+                clientId,
+                origin: window.location.origin,
+                error: response.error,
+                details: response
+              });
               const msg = response.error === "popup_closed_by_user"
                 ? "Google OAuth popup closed before completion."
                 : response.error === "access_denied"
                 ? "Permission denied by user."
+                : response.error === "invalid_client"
+                ? `Error 401 (invalid_client): OAuth Client ID (${clientId}) not recognized for origin ${window.location.origin}. Please verify Authorized JavaScript Origins in Google Cloud Console.`
                 : `Google Authentication failed: ${response.error}`;
               reject(new Error(msg));
               return;
@@ -91,6 +112,8 @@ export class GoogleDriveProvider extends BaseStorageProvider {
 
             if (response.access_token) {
               const token = response.access_token;
+              console.log("[GoogleDrive OAuth Success] Access token received successfully!");
+
               // Fetch user info (email & name)
               let userEmail = "";
               let userName = "";
@@ -102,6 +125,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
                   const info = await infoRes.json();
                   userEmail = info.email || "";
                   userName = info.name || "";
+                  console.log("[GoogleDrive OAuth Success] Connected User:", userEmail);
                 }
               } catch (e) {
                 console.warn("[GoogleDrive] Userinfo fetch notice:", e);
@@ -121,7 +145,10 @@ export class GoogleDriveProvider extends BaseStorageProvider {
               reject(new Error("No access token returned from Google"));
             }
           },
-          onerror: (err) => reject(err),
+          onerror: (err) => {
+            console.error("[GoogleDrive OAuth Script Error]:", err);
+            reject(err);
+          },
         });
         client.requestAccessToken();
       } else {
@@ -132,11 +159,12 @@ export class GoogleDriveProvider extends BaseStorageProvider {
           this.saveToken(manualToken.trim());
           resolve(manualToken.trim());
         } else {
-          reject(new Error("Google Identity Services script not loaded. Please ensure you are connected to the internet."));
+          reject(new Error("Google Identity Services script not loaded. Please check your internet connection."));
         }
       }
     });
   }
+
 
   /** Disconnect Google Drive account without deleting files */
   async disconnect() {
