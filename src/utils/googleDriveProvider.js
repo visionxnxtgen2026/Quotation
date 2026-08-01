@@ -12,6 +12,15 @@ import { localDB } from "./localDB";
 const DEFAULT_CLIENT_ID = "1048602283896-demo.apps.googleusercontent.com";
 const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
+const getClientId = () => {
+  return (
+    import.meta.env?.VITE_GOOGLE_CLIENT_ID ||
+    window.ENV_GOOGLE_CLIENT_ID ||
+    localStorage.getItem("gdrive_custom_client_id") ||
+    DEFAULT_CLIENT_ID
+  );
+};
+
 export class GoogleDriveProvider extends BaseStorageProvider {
   constructor() {
     super("GoogleDriveProvider");
@@ -67,13 +76,19 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     return new Promise((resolve, reject) => {
       if (window.google?.accounts?.oauth2) {
         const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: window.ENV_GOOGLE_CLIENT_ID || DEFAULT_CLIENT_ID,
+          client_id: getClientId(),
           scope: SCOPES,
           callback: async (response) => {
             if (response.error) {
-              reject(new Error(`Google Authentication failed: ${response.error}`));
+              const msg = response.error === "popup_closed_by_user"
+                ? "Google OAuth popup closed before completion."
+                : response.error === "access_denied"
+                ? "Permission denied by user."
+                : `Google Authentication failed: ${response.error}`;
+              reject(new Error(msg));
               return;
             }
+
             if (response.access_token) {
               const token = response.access_token;
               // Fetch user info (email & name)
