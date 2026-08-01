@@ -5,6 +5,8 @@ import {
   CloudUpload, Share2, Printer, ArrowLeft, RefreshCw,
   ExternalLink, WifiOff, Wifi, AlertCircle
 } from "lucide-react";
+import ShareDialogModal from "./ShareDialogModal.jsx";
+import { localDB } from "../../utils/localDB";
 
 const formatBytes = (bytes) => {
   if (!bytes || bytes === 0) return "—";
@@ -61,15 +63,43 @@ export default function ExportSuccessScreen({
   onGoogleDrive,
   isUploadingDrive,
   driveResult,
+  onOpenShareModal,
 }) {
   const [sharingWA, setSharingWA] = useState(false);
   const [sharingEmail, setSharingEmail] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [toastNotice, setToastNotice] = useState("");
 
   const fmt = FORMAT_META[formatId] || FORMAT_META.pdf;
   const fileSize = blob ? blob.size : 0;
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const refNo = mappedData?.quotationNo || mappedData?.referenceNo || "QTN-2026";
+  const quotationId = mappedData?.id || refNo;
+
+  const googleDriveFileId = driveResult?.driveFileId || driveResult?.fileId || null;
+  const driveUrl = driveResult?.driveUrl || null;
+
+  const showNotice = (msg) => {
+    setToastNotice(msg);
+    setTimeout(() => setToastNotice(""), 3000);
+  };
+
+  const handleOpenShareModal = () => {
+    if (!googleDriveFileId && !driveUrl) {
+      showNotice("Uploading file to Google Drive first...");
+      if (onGoogleDrive) onGoogleDrive();
+      return;
+    }
+    setShareModalOpen(true);
+    if (typeof onOpenShareModal === "function") {
+      onOpenShareModal();
+    }
+  };
+
+  const handleCloseShareModal = () => {
+    setShareModalOpen(false);
+  };
 
   const downloadFile = () => {
     if (!blob) return;
@@ -148,7 +178,14 @@ export default function ExportSuccessScreen({
   const busy = sharingWA || sharingEmail || isUploadingDrive;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32 overflow-y-auto">
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 overflow-y-auto relative">
+      {/* Toast Banner */}
+      {toastNotice && (
+        <div className="fixed top-16 left-4 right-4 z-[150] px-4 py-3 rounded-2xl shadow-xl bg-slate-900 text-white text-xs font-semibold flex items-center justify-between animate-in fade-in">
+          <span>{toastNotice}</span>
+        </div>
+      )}
+
       {/* Top Section — Success Hero */}
       <div className="px-5 pt-12 pb-6 flex flex-col items-center">
         {/* Animated check circle */}
@@ -190,167 +227,176 @@ export default function ExportSuccessScreen({
         </motion.p>
       </div>
 
-      <div className="px-4 space-y-4">
-        {/* Export Summary Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.36, duration: 0.35 }}
-          className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm"
-        >
-          {/* Status badges row */}
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-              ✓ Ready for Export
-            </span>
-            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${fmt.bg} ${fmt.color}`}>
-              {fmt.icon} {fmt.label}
-            </span>
+      {/* Document Info Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.36, duration: 0.35 }}
+        className="mx-5 bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs mb-6"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`w-12 h-12 rounded-2xl ${fmt.bg} border ${fmt.border} flex items-center justify-center text-2xl shrink-0`}>
+            {fmt.icon}
           </div>
-
-          {/* File name */}
-          <div className="flex items-start gap-3 mb-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-            <span className="text-2xl mt-0.5">{fmt.icon}</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-slate-900 truncate">{filename}</p>
-              <p className="text-[11px] text-slate-500 font-medium mt-0.5">{fmt.desc}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-black text-slate-900 truncate">{filename || `Quotation-${refNo}`}</p>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${fmt.bg} ${fmt.color} shrink-0`}>
+                {formatId}
+              </span>
             </div>
+            <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-2">
+              <span>{refNo}</span>
+              <span>•</span>
+              <span>{today}</span>
+              {fileSize > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono">{formatBytes(fileSize)}</span>
+                </>
+              )}
+            </p>
           </div>
-
-          {/* Meta grid */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Generated", value: today },
-              { label: "Format", value: fmt.label },
-              { label: "File Size", value: formatBytes(fileSize) },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex flex-col">
-                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{label}</span>
-                <span className="text-xs font-bold text-slate-800 mt-0.5 truncate">{value}</span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Action Cards */}
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Export Actions</p>
-
-        <div className="space-y-2.5">
-          <ActionCard
-            delay={0.42}
-            icon={<Download size={22} />}
-            iconBg="bg-blue-50 text-blue-600"
-            title="Download File"
-            desc={`Save ${fmt.label} to your device`}
-            onClick={downloadFile}
-            disabled={!blob}
-          />
-
-          <ActionCard
-            delay={0.46}
-            icon={<MessageSquare size={22} />}
-            iconBg="bg-emerald-50 text-emerald-600"
-            title={sharingWA ? "Opening WhatsApp..." : "Send to WhatsApp"}
-            desc="Attach file and open WhatsApp"
-            onClick={shareWhatsApp}
-            isLoading={sharingWA}
-            disabled={busy || !blob}
-          />
-
-          <ActionCard
-            delay={0.50}
-            icon={<Mail size={22} />}
-            iconBg="bg-indigo-50 text-indigo-600"
-            title={sharingEmail ? "Opening Email..." : "Send via Email"}
-            desc="Attach file and open email client"
-            onClick={sendEmail}
-            isLoading={sharingEmail}
-            disabled={busy || !blob}
-          />
-
-          <ActionCard
-            delay={0.54}
-            icon={<CloudUpload size={22} />}
-            iconBg="bg-sky-50 text-sky-600"
-            title={
-              isUploadingDrive
-                ? "Uploading to Google Drive..."
-                : driveResult?.driveUrl
-                ? "✓ Uploaded to Google Drive"
-                : "Upload to Google Drive"
-            }
-            desc={
-              driveResult?.driveUrl
-                ? "Saved in My Drive / VisionX QuoteGen Pro"
-                : isOnline
-                ? "Cloud backup in My Drive"
-                : "Offline — connect to back up"
-            }
-            onClick={onGoogleDrive}
-            isLoading={isUploadingDrive}
-            disabled={busy || !isOnline}
-            badge={
-              driveResult?.driveUrl ? (
-                <a
-                  href={driveResult.driveUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 cursor-pointer"
-                >
-                  Open Folder <ExternalLink size={12} />
-                </a>
-              ) : !isOnline ? (
-                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                  <WifiOff size={10} /> Offline
-                </span>
-              ) : null
-            }
-          />
-
-          <ActionCard
-            delay={0.58}
-            icon={<Share2 size={22} />}
-            iconBg="bg-violet-50 text-violet-600"
-            title="Share & Permissions"
-            desc="Manage Google Drive link access (Public / Private)"
-            onClick={() => {
-              if (onOpenShareModal) {
-                onOpenShareModal();
-              } else {
-                shareFile();
-              }
-            }}
-            disabled={!blob}
-          />
-
-          <ActionCard
-            delay={0.62}
-            icon={<Printer size={22} />}
-            iconBg="bg-slate-100 text-slate-700"
-            title={printing ? "Opening print dialog..." : "Print Document"}
-            desc="Send directly to printer"
-            onClick={printDoc}
-            isLoading={printing}
-            disabled={busy || !blob}
-          />
         </div>
+      </motion.div>
+
+      {/* Action Cards List */}
+      <div className="px-5 space-y-3 max-w-lg mx-auto">
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Share &amp; Export Options</p>
+
+        <ActionCard
+          delay={0.42}
+          icon={<Download size={22} />}
+          iconBg="bg-blue-50 text-blue-600"
+          title="Download File"
+          desc="Save directly to device storage"
+          onClick={downloadFile}
+          disabled={!blob}
+        />
+
+        <ActionCard
+          delay={0.46}
+          icon={<MessageSquare size={22} />}
+          iconBg="bg-emerald-50 text-emerald-600"
+          title={sharingWA ? "Opening WhatsApp..." : "Send to WhatsApp"}
+          desc="Attach file and open WhatsApp"
+          onClick={shareWhatsApp}
+          isLoading={sharingWA}
+          disabled={busy || !blob}
+        />
+
+        <ActionCard
+          delay={0.50}
+          icon={<Mail size={22} />}
+          iconBg="bg-indigo-50 text-indigo-600"
+          title={sharingEmail ? "Opening Email..." : "Send via Email"}
+          desc="Attach file and open email client"
+          onClick={sendEmail}
+          isLoading={sharingEmail}
+          disabled={busy || !blob}
+        />
+
+        <ActionCard
+          delay={0.54}
+          icon={<CloudUpload size={22} />}
+          iconBg="bg-sky-50 text-sky-600"
+          title={
+            isUploadingDrive
+              ? "Uploading to Google Drive..."
+              : driveResult?.driveUrl
+              ? "✓ Uploaded to Google Drive"
+              : "Upload to Google Drive"
+          }
+          desc={
+            driveResult?.driveUrl
+              ? "Saved in My Drive / VisionX QuoteGen Pro"
+              : isOnline
+              ? "Cloud backup in My Drive"
+              : "Offline — connect to back up"
+          }
+          onClick={onGoogleDrive}
+          isLoading={isUploadingDrive}
+          disabled={busy || !isOnline}
+          badge={
+            driveResult?.driveUrl ? (
+              <a
+                href={driveResult.driveUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 cursor-pointer"
+              >
+                Open Folder <ExternalLink size={12} />
+              </a>
+            ) : !isOnline ? (
+              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                <WifiOff size={10} /> Offline
+              </span>
+            ) : null
+          }
+        />
+
+        <ActionCard
+          delay={0.58}
+          icon={<Share2 size={22} />}
+          iconBg="bg-violet-50 text-violet-600"
+          title="Share &amp; Permissions"
+          desc="Manage Google Drive link access (Public / Private)"
+          onClick={handleOpenShareModal}
+          disabled={!blob}
+        />
+
+        <ActionCard
+          delay={0.62}
+          icon={<Printer size={22} />}
+          iconBg="bg-slate-100 text-slate-700"
+          title={printing ? "Preparing Print..." : "Print Document"}
+          desc="Send to local or network printer"
+          onClick={printDoc}
+          isLoading={printing}
+          disabled={busy || !blob}
+        />
       </div>
 
-      {/* Fixed bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-white/90 backdrop-blur-md border-t border-slate-100">
-        <motion.button
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.72, duration: 0.3 }}
-          onClick={onGenerateAnother}
-          whileTap={{ scale: 0.97 }}
-          className="w-full flex items-center justify-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl py-4 text-sm font-black tracking-wide shadow-lg transition-colors cursor-pointer"
+      {/* Bottom Floating Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200/80 flex items-center gap-3 z-40 max-w-lg mx-auto">
+        <button
+          onClick={onBack}
+          className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
         >
-          <RefreshCw size={16} strokeWidth={2.5} />
-          Generate Another Export
-        </motion.button>
+          <ArrowLeft size={16} />
+          <span>Back to Dashboard</span>
+        </button>
+
+        <button
+          onClick={onGenerateAnother}
+          className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md shadow-blue-600/20"
+        >
+          <RefreshCw size={16} />
+          <span>Export Another</span>
+        </button>
       </div>
+
+      {/* Self-contained Share & Permissions Modal */}
+      {shareModalOpen && (
+        <ShareDialogModal
+          isOpen={shareModalOpen}
+          onClose={handleCloseShareModal}
+          file={
+            localDB.getCloudFileById(quotationId) || {
+              id: quotationId,
+              fileName: filename || `${refNo}.pdf`,
+              driveFileId: googleDriveFileId,
+              shareUrl: driveUrl,
+              visibility: driveResult?.visibility || "public",
+              allowedEmails: [localStorage.getItem("gdrive_user_email") || "owner@visionx.com"],
+            }
+          }
+          onFileUpdated={() => {
+            window.dispatchEvent(new Event("cloudFilesUpdated"));
+          }}
+        />
+      )}
     </div>
   );
 }
