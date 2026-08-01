@@ -298,7 +298,7 @@ export default function ExportSuccessScreen({
                   onClick={(e) => e.stopPropagation()}
                   className="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 cursor-pointer"
                 >
-                  Open <ExternalLink size={12} />
+                  Open Folder <ExternalLink size={12} />
                 </a>
               ) : !isOnline ? (
                 <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-1">

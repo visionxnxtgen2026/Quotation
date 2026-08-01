@@ -385,6 +385,26 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     
     if (visibility === "public") {
       try {
+        // List existing permissions to revoke email-specific permissions if switching from private
+        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role)`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (permRes.ok) {
+          const permData = await permRes.json();
+          if (permData.permissions) {
+            for (const p of permData.permissions) {
+              if (p.type === "user" && p.role !== "owner") {
+                await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${p.id}`, {
+                  method: "DELETE",
+                  headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+
+        // Add 'anyone' reader permission
         await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
           method: "POST",
           headers: {
@@ -413,7 +433,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     } else if (visibility === "private") {
       try {
         // List existing permissions to revoke 'anyone' public link access
-        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role)`, {
           headers: { Authorization: `Bearer ${token}` }
         });
 

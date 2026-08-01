@@ -2,15 +2,16 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Globe, Lock, Check, Copy, ExternalLink, QrCode, Plus, Trash2, Save,
-  ShieldCheck, Loader2, Sparkles, CheckCircle2, ArrowRight, Share2
+  ShieldCheck, Loader2, CheckCircle2, ArrowRight, Share2, UserPlus, Users
 } from "lucide-react";
 import { localDB } from "../../utils/localDB";
 import { googleDriveProvider } from "../../utils/googleDriveProvider";
 import QRCodeModal from "../settings/cloud/QRCodeModal";
 
 /**
- * 🔒 ShareDialogModal — Enterprise Google Drive Sharing & Permission Management Modal.
- * Modifies permissions of existing Google Drive files in-place without duplicating uploads.
+ * 🔒 ShareDialogModal — Google Drive Permission Manager.
+ * Edits permissions of an existing Google Drive file in-place using driveFileId.
+ * NEVER uploads or duplicates files.
  */
 export default function ShareDialogModal({
   isOpen,
@@ -38,7 +39,7 @@ export default function ShareDialogModal({
       const defaultOwner = localStorage.getItem("gdrive_user_email") || "owner@visionx.com";
       const list = Array.isArray(file.allowedEmails) && file.allowedEmails.length > 0
         ? file.allowedEmails
-        : [defaultOwner, "client@gmail.com"];
+        : [defaultOwner, "customer@gmail.com"];
       setAllowedEmails(list);
     }
   }, [isOpen, file]);
@@ -48,7 +49,7 @@ export default function ShareDialogModal({
   const handleCopyLink = () => {
     const urlToCopy = shareUrl || file.shareUrl;
     if (!urlToCopy) {
-      if (onToast) onToast("No link available.", "error");
+      if (onToast) onToast("No Google Drive link available.", "error");
       return;
     }
     navigator.clipboard.writeText(urlToCopy);
@@ -80,7 +81,7 @@ export default function ShareDialogModal({
     }
     const trimmed = newEmail.trim();
     if (allowedEmails.includes(trimmed)) {
-      if (onToast) onToast("Email address already added.", "error");
+      if (onToast) onToast("User email already added.", "error");
       return;
     }
     setAllowedEmails((prev) => [...prev, trimmed]);
@@ -91,7 +92,7 @@ export default function ShareDialogModal({
     setAllowedEmails((prev) => prev.filter((e) => e !== emailToRemove));
   };
 
-  // ── Execute Public Permission Update ──
+  // ── Execute Public Permission Update on Existing Google Drive File ID ──
   const handleApplyPublic = async () => {
     setIsUpdating(true);
     try {
@@ -119,16 +120,16 @@ export default function ShareDialogModal({
 
       if (onFileUpdated) onFileUpdated(updatedFile);
       setStep("public_success");
-      if (onToast) onToast("✓ Public link created successfully!", "success");
+      if (onToast) onToast("✓ Public Link Created", "success");
     } catch (err) {
       console.error("Error setting public permission:", err);
       if (onToast) onToast("Failed to update Google Drive permission.", "error");
-    } fontally: {
+    } finally {
       setIsUpdating(false);
     }
   };
 
-  // ── Execute Private Permission Update ──
+  // ── Execute Private Permission Update on Existing Google Drive File ID ──
   const handleApplyPrivate = async () => {
     setIsUpdating(true);
     try {
@@ -140,17 +141,18 @@ export default function ShareDialogModal({
         ...file,
         visibility: "private",
         allowedEmails,
+        shareUrl: null, // Revoke public share URL
       });
 
       localDB.logCloudSyncEvent({
         action: "Permission Changed",
         fileName: file.fileName,
-        details: `Visibility set to PRIVATE (${allowedEmails.length} emails) for ${file.fileName}.`
+        details: `Visibility set to PRIVATE (${allowedEmails.length} users) for ${file.fileName}.`
       });
 
       if (onFileUpdated) onFileUpdated(updatedFile);
       setStep("private_success");
-      if (onToast) onToast("✓ Private permissions updated successfully!", "success");
+      if (onToast) onToast("✓ Permissions Updated Successfully", "success");
     } catch (err) {
       console.error("Error setting private permission:", err);
       if (onToast) onToast("Failed to save private permissions.", "error");
@@ -159,8 +161,9 @@ export default function ShareDialogModal({
     }
   };
 
-  const handleContinueMode = () => {
-    if (selectedMode === "public") {
+  const handleSelectMode = (mode) => {
+    setSelectedMode(mode);
+    if (mode === "public") {
       handleApplyPublic();
     } else {
       setStep("private_form");
@@ -192,11 +195,11 @@ export default function ShareDialogModal({
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full inline-block mb-1">
-                  Google Drive Permissions
+                  Google Drive Permission Manager
                 </span>
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">Share Quotation</h2>
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">Manage Share Permissions</h2>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Choose how you want to share this Google Drive file.
+                  Choose who can access <span className="font-bold text-slate-800">{file.fileName}</span>.
                 </p>
               </div>
 
@@ -212,10 +215,10 @@ export default function ShareDialogModal({
             {step === "select" && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-3">
-                  {/* 🌍 Public Card */}
+                  {/* 🌍 Public Option */}
                   <div
-                    onClick={() => setSelectedMode("public")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative ${
+                    onClick={() => handleSelectMode("public")}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative group ${
                       selectedMode === "public"
                         ? "border-emerald-500 bg-emerald-50/40 shadow-xs"
                         : "border-slate-200 hover:border-slate-300 bg-white"
@@ -236,10 +239,10 @@ export default function ShareDialogModal({
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 font-bold mt-0.5">
-                            Anyone with the link can view this quotation.
+                            Anyone with the link can access this quotation.
                           </p>
                           <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                            Perfect for customers.
+                            Updates Google Drive permission (type = anyone, role = reader).
                           </p>
                         </div>
                       </div>
@@ -252,10 +255,10 @@ export default function ShareDialogModal({
                     </div>
                   </div>
 
-                  {/* 🔒 Private Card */}
+                  {/* 🔒 Private Option */}
                   <div
-                    onClick={() => setSelectedMode("private")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative ${
+                    onClick={() => handleSelectMode("private")}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative group ${
                       selectedMode === "private"
                         ? "border-amber-500 bg-amber-50/40 shadow-xs"
                         : "border-slate-200 hover:border-slate-300 bg-white"
@@ -272,14 +275,14 @@ export default function ShareDialogModal({
                           <div className="flex items-center gap-2">
                             <h4 className="text-sm font-black text-slate-900">🔒 Private</h4>
                             <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full uppercase">
-                              Restricted Access
+                              Authorized Email List
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 font-bold mt-0.5">
-                            Only selected email addresses can open this quotation.
+                            Only authorized email addresses can access this quotation.
                           </p>
                           <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                            Perfect for confidential quotations.
+                            Grants reader permission only to added email addresses.
                           </p>
                         </div>
                       </div>
@@ -293,23 +296,15 @@ export default function ShareDialogModal({
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <button
-                    onClick={handleContinueMode}
-                    disabled={isUpdating}
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {isUpdating ? (
-                      <><Loader2 size={16} className="animate-spin" /> Updating Google Drive...</>
-                    ) : (
-                      <><span>Continue</span> <ArrowRight size={16} /></>
-                    )}
-                  </button>
-                </div>
+                {isUpdating && (
+                  <div className="py-2 text-center text-xs font-bold text-blue-600 flex items-center justify-center gap-2">
+                    <Loader2 size={16} className="animate-spin" /> Updating Google Drive Permissions...
+                  </div>
+                )}
               </div>
             )}
 
-            {/* ─── PUBLIC SUCCESS FLOW ─── */}
+            {/* ─── PUBLIC SUCCESS SCREEN ─── */}
             {step === "public_success" && (
               <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center gap-3 text-emerald-950">
@@ -317,15 +312,15 @@ export default function ShareDialogModal({
                   <div>
                     <h4 className="text-xs font-black">✓ Public Link Created</h4>
                     <p className="text-[11px] text-emerald-700 font-medium">
-                      Anyone with this Google Drive link can now view the document.
+                      Permissions updated on Google Drive. Anyone with the link can view this file.
                     </p>
                   </div>
                 </div>
 
-                {/* Display Google Drive URL */}
+                {/* Display Google Drive Public URL */}
                 <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 space-y-1.5">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    Google Drive Share URL
+                    Google Drive Public Link
                   </label>
                   <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between text-xs font-mono text-slate-700 truncate">
                     <span className="truncate pr-2">{shareUrl || file.shareUrl}</span>
@@ -338,7 +333,7 @@ export default function ShareDialogModal({
                   </div>
                 </div>
 
-                {/* Public Actions Grid */}
+                {/* Action Buttons */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <button
                     onClick={handleCopyLink}
@@ -361,32 +356,32 @@ export default function ShareDialogModal({
                   )}
 
                   <button
-                    onClick={() => setShowQRModal(true)}
-                    className="py-2.5 px-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <QrCode size={14} />
-                    <span>QR Code</span>
-                  </button>
-
-                  <button
                     onClick={handleNativeShare}
                     className="py-2.5 px-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <Share2 size={14} />
                     <span>Share</span>
                   </button>
+
+                  <button
+                    onClick={() => setShowQRModal(true)}
+                    className="py-2.5 px-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <QrCode size={14} />
+                    <span>Generate QR</span>
+                  </button>
                 </div>
 
                 <div className="pt-2 flex justify-between items-center border-t border-slate-100">
                   <button
                     onClick={() => setStep("select")}
-                    className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                   >
-                    ← Edit Permissions
+                    ← Change Permissions
                   </button>
                   <button
                     onClick={onClose}
-                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     Done
                   </button>
@@ -398,15 +393,15 @@ export default function ShareDialogModal({
             {step === "private_form" && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Authorized Users
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users size={15} className="text-amber-600" /> Authorized Users
                   </h4>
                   <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                    {allowedEmails.length} Recipient(s)
+                    {allowedEmails.length} User(s)
                   </span>
                 </div>
 
-                {/* Email Input + Add Button */}
+                {/* Email Input + Add User Button */}
                 <div className="flex gap-2">
                   <input
                     type="email"
@@ -420,10 +415,10 @@ export default function ShareDialogModal({
                   <button
                     type="button"
                     onClick={handleAddEmail}
-                    className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                    className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0 shadow-2xs"
                   >
-                    <Plus size={15} />
-                    <span>Add Email</span>
+                    <UserPlus size={15} />
+                    <span>Add User</span>
                   </button>
                 </div>
 
@@ -449,7 +444,7 @@ export default function ShareDialogModal({
                           type="button"
                           onClick={() => handleRemoveEmail(email)}
                           className="text-slate-400 hover:text-red-600 transition-colors p-1 cursor-pointer"
-                          title="Remove access"
+                          title="Remove User"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -462,7 +457,7 @@ export default function ShareDialogModal({
                   <button
                     onClick={() => setStep("select")}
                     disabled={isUpdating}
-                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -481,7 +476,7 @@ export default function ShareDialogModal({
               </div>
             )}
 
-            {/* ─── PRIVATE SUCCESS FLOW ─── */}
+            {/* ─── PRIVATE SUCCESS SCREEN ─── */}
             {step === "private_success" && (
               <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 flex items-center gap-3 text-amber-950">
@@ -489,7 +484,7 @@ export default function ShareDialogModal({
                   <div>
                     <h4 className="text-xs font-black">✓ Permissions Updated Successfully</h4>
                     <p className="text-[11px] text-amber-700 font-medium">
-                      Public access revoked. Only authorized email accounts can access this file on Google Drive.
+                      Public link disabled. Reader permission granted only to the authorized email list on Google Drive.
                     </p>
                   </div>
                 </div>
@@ -497,13 +492,13 @@ export default function ShareDialogModal({
                 <div className="pt-2 flex justify-between items-center">
                   <button
                     onClick={() => setStep("select")}
-                    className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                   >
-                    ← Edit Permissions
+                    ← Change Permissions
                   </button>
                   <button
                     onClick={onClose}
-                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     Done
                   </button>
@@ -515,9 +510,11 @@ export default function ShareDialogModal({
             <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between text-xs text-slate-600 font-medium">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck size={16} className="text-blue-600" />
-                Google Drive In-Place Permission Sync
+                Existing Google Drive File ID:
               </span>
-              <span className="font-bold text-slate-800">Same Drive File ID</span>
+              <span className="font-mono font-bold text-slate-800 truncate max-w-[160px]">
+                {file.driveFileId || file.id}
+              </span>
             </div>
           </motion.div>
         </div>
