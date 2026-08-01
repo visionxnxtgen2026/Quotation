@@ -24,6 +24,7 @@ export default function CompanyProfilesScreen({
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
 
   if (!isOpen) return null;
 
@@ -41,6 +42,11 @@ export default function CompanyProfilesScreen({
 
   const profiles = localDB.getCompanyProfiles();
 
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(""), 2500);
+  };
+
   const handleSelectCompany = (p) => {
     localDB.setActiveCompanyProfileId(p.id);
     if (goToCompanyWorkspace) {
@@ -54,6 +60,7 @@ export default function CompanyProfilesScreen({
     e.stopPropagation();
     localDB.setDefaultCompanyProfile(id);
     setActiveMenuId(null);
+    showToast("Default company changed successfully.");
     if (onProfilesUpdated) onProfilesUpdated();
   };
 
@@ -129,6 +136,14 @@ export default function CompanyProfilesScreen({
         </button>
       </div>
 
+      {/* 🍞 TOAST BANNER */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white font-extrabold text-xs px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+          <Check size={16} className="text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* 🏢 MAIN PROFILES LIST CONTAINER */}
       <div className="flex-1 overflow-y-auto p-4 max-w-3xl mx-auto w-full space-y-4">
         
@@ -140,7 +155,7 @@ export default function CompanyProfilesScreen({
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-white">Multi-Organization Workspaces</h3>
-              <p className="text-xs text-blue-100 mt-0.5 font-medium">Tap any company card to select and edit its independent settings.</p>
+              <p className="text-xs text-blue-100 mt-0.5 font-medium">Tap any company card to open its dedicated workspace settings.</p>
             </div>
           </div>
         </div>
@@ -156,8 +171,10 @@ export default function CompanyProfilesScreen({
               <div
                 key={p.id}
                 onClick={() => handleSelectCompany(p)}
-                className={`relative bg-white rounded-3xl p-4 sm:p-5 border shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_24px_rgba(0,0,0,0.06)] transition-all cursor-pointer group ${
-                  isDefault ? "border-blue-200 ring-1 ring-blue-100" : "border-slate-200/80 hover:border-blue-300"
+                className={`relative rounded-3xl p-4 sm:p-5 border shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_24px_rgba(0,0,0,0.06)] transition-all cursor-pointer group ${
+                  isDefault
+                    ? "bg-gradient-to-r from-emerald-50/60 via-white to-white border-emerald-300 ring-2 ring-emerald-100"
+                    : "bg-white border-slate-200/80 hover:border-blue-300"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -195,8 +212,8 @@ export default function CompanyProfilesScreen({
                             {name}
                           </h4>
                           {isDefault && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
-                              <Star size={10} className="fill-emerald-600 text-emerald-600" /> Default
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300 text-[10px] font-black uppercase">
+                              <Star size={10} className="fill-emerald-600 text-emerald-600" /> DEFAULT
                             </span>
                           )}
                         </div>
@@ -234,13 +251,17 @@ export default function CompanyProfilesScreen({
                     onClick={(e) => e.stopPropagation()}
                     className="absolute right-4 top-14 z-30 bg-white rounded-2xl shadow-xl border border-slate-200 p-1.5 min-w-[170px] space-y-1 animate-in zoom-in-95 duration-150"
                   >
-                    {!isDefault && (
+                    {!isDefault ? (
                       <button
                         onClick={(e) => handleSetDefault(e, p.id)}
-                        className="w-full px-3 py-2 text-left text-xs font-extrabold text-blue-600 hover:bg-blue-50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                        className="w-full px-3 py-2 text-left text-xs font-extrabold text-emerald-600 hover:bg-emerald-50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                       >
-                        <Star size={14} /> Set as Default
+                        <Star size={14} className="fill-emerald-600" /> Set as Default
                       </button>
+                    ) : (
+                      <div className="px-3 py-1.5 text-xs font-extrabold text-emerald-700 bg-emerald-50 rounded-xl flex items-center gap-2">
+                        <Check size={14} /> Active Default
+                      </div>
                     )}
                     <button
                       onClick={(e) => {
@@ -257,13 +278,13 @@ export default function CompanyProfilesScreen({
                       onClick={(e) => handleDuplicate(e, p.id)}
                       className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      <Copy size={14} /> Duplicate Profile
+                      <Copy size={14} /> Duplicate Company
                     </button>
                     <button
                       onClick={(e) => handleExportSingle(e, p)}
                       className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      <Download size={14} /> Export Profile JSON
+                      <Download size={14} /> Export Company
                     </button>
                     {!isDefault && (
                       <button

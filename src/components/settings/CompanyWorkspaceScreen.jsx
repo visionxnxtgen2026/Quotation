@@ -369,31 +369,11 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
         {(activeTab === "all" || activeTab === "preferences") && (
           <SettingsCard
             title="6. Workspace Preferences"
-            subtitle="Default workspace status, currency &amp; save behaviour"
+            subtitle="Currency unit &amp; proposal formatting settings for this company"
             icon={<Settings2 size={18} />}
             iconBg="bg-blue-50 text-blue-600"
           >
             <div className="space-y-3">
-              {/* Default Company Status */}
-              <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="pr-3">
-                  <p className="text-xs font-bold text-slate-800">Set as Default Company</p>
-                  <p className="text-[10px] text-slate-500 font-medium leading-snug mt-0.5">Automatically load this company when creating new quotations.</p>
-                </div>
-                {!form.isDefault ? (
-                  <button
-                    onClick={handleSetAsDefault}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer shrink-0"
-                  >
-                    <Star size={12} /> Set Default
-                  </button>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase shrink-0">
-                    <Star size={12} className="fill-emerald-600 text-emerald-600" /> Default
-                  </span>
-                )}
-              </div>
-
               {/* Currency Selector */}
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-2.5">
