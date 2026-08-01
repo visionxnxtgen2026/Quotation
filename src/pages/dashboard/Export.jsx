@@ -5,6 +5,7 @@ import { localDB } from "../../utils/localDB";
 import { normalizeQuotationData } from "../../utils/quotationMapper";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { googleDriveProvider, triggerAutoSync } from "../../utils/googleDriveProvider";
+import { getTemplateOutputFormat, OUTPUT_FORMATS } from "../../components/theme/templateUtils.js";
 import {
   Download, Mail, MessageSquare, Printer,
   CheckCircle2, AlertCircle, FileCheck, ArrowRight,
@@ -25,7 +26,6 @@ import BusinessProTemplate from "../../components/theme/BusinessProTemplate.jsx"
 import EnterpriseTemplate from "../../components/theme/EnterpriseTemplate.jsx";
 import ContractorTemplate from "../../components/theme/ContractorTemplate.jsx";
 import SignatureTemplate from "../../components/theme/SignatureTemplate.jsx";
-import ExportDialogModal from "../../components/export/ExportDialogModal.jsx";
 
 export default function Export({
   goBack, goToPreview, goToDashboard, goToCreate,
@@ -34,7 +34,6 @@ export default function Export({
   const { isOnline } = useNetworkStatus();
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPreparingWA, setIsPreparingWA] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
@@ -49,6 +48,20 @@ export default function Export({
 
   const pdfContainerRef = useRef(null);
   const selectedTemplate = localStorage.getItem("selectedTemplate") || "classic";
+
+  // Resolved output format for the current template (pdf | docx)
+  const [outputFormat, setOutputFormat] = useState(() => getTemplateOutputFormat(selectedTemplate));
+
+  // Keep in sync when TemplateSelector changes the format
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.formatId) setOutputFormat(e.detail.formatId);
+    };
+    window.addEventListener("templateFormatChanged", handler);
+    return () => window.removeEventListener("templateFormatChanged", handler);
+  }, []);
+
+  const currentFmt = OUTPUT_FORMATS.find((f) => f.id === outputFormat) || OUTPUT_FORMATS[0];
 
   const quotationData = useMemo(() => {
     let data = null;
@@ -107,22 +120,19 @@ export default function Export({
 
   // 📄 Enterprise-Grade Multi-Page PDF Generator with Header/Footer & Section Breaking
   const generatePdfBase64 = async () => {
-    console.log("[PDF] Generating Enterprise Multi-Page PDF...");
     const element = pdfContainerRef.current || document.getElementById("quotation-pdf-container");
-    if (!element) {
-      console.error("[PDF] Error: PDF container element not found");
-      throw new Error("PDF container element not found");
-    }
+    if (!element) throw new Error("PDF container element not found");
     const { exportEnterprisePDF } = await import("../../utils/pdfExporter.js");
     return await exportEnterprisePDF(element, pdfFilename, mappedData || {});
   };
 
-  const handleOpenExportModal = () => {
-    setIsExportModalOpen(true);
-  };
-
-  const handleExecuteExport = async (formatId) => {
+  /**
+   * 📤 Direct export — reads template's configured output format and generates immediately.
+   * No format selection popup. Format is set via the TemplateSelector dropdown.
+   */
+  const handleExportDocument = async () => {
     if (isDownloadingPDF) return;
+    const formatId = getTemplateOutputFormat(selectedTemplate);
     setIsDownloadingPDF(true);
 
     try {
@@ -132,75 +142,52 @@ export default function Export({
       const { ExportService } = await import("../../utils/exportService.js");
       const result = await ExportService.exportFormat(formatId, element, pdfFilename, mappedData || {});
 
-      if (formatId === "word" || formatId === "docx") {
+      if (formatId === "docx" || formatId === "word") {
+        // Word: trigger browser download
         const docxName = pdfFilename.replace(/\.pdf$/i, ".docx");
         if (result.blob) {
           const url = URL.createObjectURL(result.blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = docxName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = docxName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
           URL.revokeObjectURL(url);
         }
         showToast("Quotation exported successfully.", "success");
       } else {
-        // PDF Export
+        // PDF: Capacitor native save or browser download
         const { cleanBase64, pdf } = result;
         const relPath = `VisionX QuoteGen Pro/${pdfFilename}`;
         let isFileSaved = false;
 
         if (window.Capacitor && window.Capacitor.isPluginAvailable("Filesystem")) {
           const { Filesystem, Directory } = await import(/* @vite-ignore */ "@capacitor/filesystem");
-          try {
-            await Filesystem.requestPermissions().catch(() => {});
-          } catch (pErr) {}
+          await Filesystem.requestPermissions().catch(() => {});
 
           let usedDirectory = Directory.Documents;
           let fileUri = "";
           try {
-            const res1 = await Filesystem.writeFile({
-              path: relPath,
-              data: cleanBase64,
-              directory: Directory.ExternalStorage,
-              recursive: true,
-            });
-            fileUri = res1.uri;
-            usedDirectory = Directory.ExternalStorage;
-          } catch (e1) {
-            const res2 = await Filesystem.writeFile({
-              path: relPath,
-              data: cleanBase64,
-              directory: Directory.Documents,
-              recursive: true,
-            });
-            fileUri = res2.uri;
-            usedDirectory = Directory.Documents;
+            const r1 = await Filesystem.writeFile({ path: relPath, data: cleanBase64, directory: Directory.ExternalStorage, recursive: true });
+            fileUri = r1.uri; usedDirectory = Directory.ExternalStorage;
+          } catch {
+            const r2 = await Filesystem.writeFile({ path: relPath, data: cleanBase64, directory: Directory.Documents, recursive: true });
+            fileUri = r2.uri;
           }
 
           try {
-            const statResult = await Filesystem.stat({ path: relPath, directory: usedDirectory });
-            isFileSaved = !!(statResult && (statResult.size > 0 || statResult.type === "file"));
-          } catch (e) {
-            isFileSaved = true;
-          }
+            const stat = await Filesystem.stat({ path: relPath, directory: usedDirectory });
+            isFileSaved = !!(stat && (stat.size > 0 || stat.type === "file"));
+          } catch { isFileSaved = true; }
 
           if (isFileSaved && window.Capacitor.isPluginAvailable("LocalNotifications")) {
             try {
               const { LocalNotifications } = await import(/* @vite-ignore */ "@capacitor/local-notifications");
               await LocalNotifications.schedule({
-                notifications: [
-                  {
-                    title: "Download complete",
-                    body: `${pdfFilename} — Tap to open`,
-                    id: Math.floor(Date.now() % 100000) + 1,
-                    schedule: { at: new Date(Date.now() + 100) },
-                    extra: { path: fileUri },
-                  },
-                ],
+                notifications: [{ title: "Download complete", body: `${pdfFilename} — Tap to open`, id: Math.floor(Date.now() % 100000) + 1, schedule: { at: new Date(Date.now() + 100) }, extra: { path: fileUri } }],
               });
-            } catch (e) {}
+            } catch {}
           }
         } else {
           pdf.save(pdfFilename);
@@ -212,8 +199,6 @@ export default function Export({
           triggerAutoSync("export", { fileName: pdfFilename, pdfBlob: cleanBase64 });
         }
       }
-
-      setIsExportModalOpen(false);
     } catch (err) {
       console.error("[Export Error]:", err);
       showToast(`Export failed: ${err?.message || "Please try again"}`, "error");
@@ -435,8 +420,15 @@ export default function Export({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full uppercase tracking-wider">Ready for export</span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-slate-100 text-slate-600">
+                    {currentFmt.icon} {currentFmt.label}
+                  </span>
                 </div>
-                <p className="text-xs font-black text-slate-900 truncate mt-1">{pdfFilename}</p>
+                <p className="text-xs font-black text-slate-900 truncate mt-1">
+                  {outputFormat === "docx"
+                    ? pdfFilename.replace(/\.pdf$/i, ".docx")
+                    : pdfFilename}
+                </p>
               </div>
             </div>
 
@@ -446,8 +438,8 @@ export default function Export({
                 <span className="font-bold text-slate-800 mt-0.5">{formattedToday}</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Estimated Size</span>
-                <span className="font-bold text-slate-800 mt-0.5">~245 KB</span>
+                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Output Format</span>
+                <span className="font-bold text-slate-800 mt-0.5">{currentFmt.icon} {currentFmt.desc}</span>
               </div>
             </div>
           </div>
@@ -455,13 +447,13 @@ export default function Export({
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">Export Options</p>
 
           <div className="space-y-3">
-            {/* 1. Export Document Modal Action */}
+            {/* 1. Direct Export — format determined by template configuration */}
             <MobileActionCard
               icon={<Download size={22} />}
               iconBg="bg-blue-50 text-blue-600"
-              title={isDownloadingPDF ? "Exporting Document..." : "Export Quotation"}
-              desc="Choose export format (PDF, Word .docx)"
-              onClick={handleOpenExportModal}
+              title={isDownloadingPDF ? `Exporting ${currentFmt.label}...` : `Export as ${currentFmt.label}`}
+              desc={isDownloadingPDF ? "Generating document, please wait..." : `Download ${currentFmt.desc} · Tap ▾ in toolbar to change format`}
+              onClick={handleExportDocument}
               isLoading={isDownloadingPDF}
               disabled={busy}
             />
@@ -545,12 +537,6 @@ export default function Export({
         </div>
       </div>
 
-      <ExportDialogModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExecuteExport}
-        isExporting={isDownloadingPDF}
-      />
     </>
   );
 }
