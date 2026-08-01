@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import MobileHeader from "../../components/mobile/MobileHeader";
 import CloudAccountCard from "../../components/settings/cloud/CloudAccountCard";
 import BackupSettingsCard from "../../components/settings/cloud/BackupSettingsCard";
+import WorkspaceBackupCard from "../../components/settings/cloud/WorkspaceBackupCard";
 import UploadedFilesManager from "../../components/settings/cloud/UploadedFilesManager";
 import RecentlyDeletedManager from "../../components/settings/cloud/RecentlyDeletedManager";
 import SyncHistoryTimeline from "../../components/settings/cloud/SyncHistoryTimeline";
@@ -136,6 +137,7 @@ export default function CloudBackupPage({ onBack }) {
         {activeTab === "overview" && (
           <div className="space-y-4">
             <CloudAccountCard onToast={showToast} />
+            <WorkspaceBackupCard onToast={showToast} />
             <BackupSettingsCard onToast={showToast} />
           </div>
         )}

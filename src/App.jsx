@@ -19,6 +19,7 @@ import MobileLayout from "./components/mobile/MobileLayout";
 import { admobManager } from "./utils/admobManager";
 
 import CompanyWorkspaceScreen from "./components/settings/CompanyWorkspaceScreen";
+import WorkspaceRestoreDetector from "./components/settings/cloud/WorkspaceRestoreDetector";
 
 export default function App() {
   const [consentReady, setConsentReady] = useState(false);
@@ -271,6 +272,9 @@ export default function App() {
           onTabChange={handleBottomNav}
         />
       )}
+
+      {/* Global Google Drive Workspace Restore Detector */}
+      <WorkspaceRestoreDetector />
     </MobileLayout>
   );
 }
