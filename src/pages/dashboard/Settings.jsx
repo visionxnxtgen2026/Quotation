@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import MobileHeader from "../../components/mobile/MobileHeader";
 import SettingsCard from "../../components/mobile/SettingsCard";
+import CloudStorageSettingsCard from "../../components/settings/CloudStorageSettingsCard";
 import { MobileInput } from "../../components/mobile/MobileFormCard";
 import DeleteAccountModal from "../../components/settings/DeleteAccountModal";
 import { localDB } from "../../utils/localDB";
+import { triggerAutoSync } from "../../utils/googleDriveProvider";
 import {
   Building2, FileText, Landmark, CheckCircle2, Save,
   AlertTriangle, Trash2, Image as ImageIcon, Shield, ScrollText, X,
@@ -124,6 +126,10 @@ export default function Settings({
         signatureImage: form.signatureImage
       }
     });
+    
+    // Trigger auto-sync to update Google Drive Cloud Storage if enabled
+    triggerAutoSync("save");
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -215,6 +221,9 @@ export default function Settings({
             </div>
           </div>
         </SettingsCard>
+
+        {/* ☁️ Cloud Storage (Google Drive Backup & Sync Card) */}
+        <CloudStorageSettingsCard />
 
         {/* 2. Banking & Payment Information */}
         <SettingsCard title="Banking Information" subtitle="Auto-populates payment details table" icon={<Landmark size={18} />} iconBg="bg-emerald-50 text-emerald-600">

@@ -4,7 +4,7 @@ import { admobManager } from "../../utils/admobManager";
 import { localDB } from "../../utils/localDB";
 import { normalizeQuotationData } from "../../utils/quotationMapper";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
-import GoogleDriveProvider from "../../utils/googleDriveProvider";
+import { googleDriveProvider, triggerAutoSync } from "../../utils/googleDriveProvider";
 import {
   Download, Mail, MessageSquare, Printer,
   CheckCircle2, AlertCircle, FileCheck, ArrowRight,
@@ -264,6 +264,7 @@ export default function Export({
 
       if (isFileSaved) {
         showToast(`PDF downloaded successfully. Saved to Downloads/VisionX QuoteGen Pro/`, "success");
+        triggerAutoSync("export", { fileName: pdfFilename, pdfBlob: cleanBase64 });
         console.log("[PDF] Download completed");
       } else {
         console.error("[PDF] Error: Download failed, file verification returned false");
@@ -393,12 +394,10 @@ export default function Export({
       // Save PDF Blob locally to IndexedDB first (Offline-First guarantee)
       await localDB.savePdfBlob(qId, cleanBase64);
 
-      // Upload to Google Drive using GoogleDriveProvider
-      const provider = new GoogleDriveProvider();
-      const uploadRes = await provider.uploadFile({
+      // Upload to Google Drive using googleDriveProvider
+      const uploadRes = await googleDriveProvider.uploadPdf({
         fileName: pdfFilename,
         pdfBlob: cleanBase64,
-        date: new Date(),
       });
 
       // Update Local Database with Cloud Sync Metadata

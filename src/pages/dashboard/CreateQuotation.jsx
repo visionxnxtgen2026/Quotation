@@ -10,6 +10,7 @@ import Stepper from "../../components/mobile/Stepper";
 import CategoryRateTable from "../../components/quotation/CategoryRateTable";
 import { admobManager } from "../../utils/admobManager";
 import { localDB } from "../../utils/localDB";
+import { triggerAutoSync } from "../../utils/googleDriveProvider";
 
 const STEPS = [
   { key: "project",   title: "Details" },
@@ -716,6 +717,7 @@ export default function CreateQuotation({
       localDB.saveQuotation(payload);
       localStorage.setItem("previewDraft", JSON.stringify(payload));
       window.dispatchEvent(new Event("quotationDataUpdated"));
+      triggerAutoSync("save", payload);
       setIsSaved(true);
       setIsSaving(false);
       if (setQuotationId) setQuotationId(payload._id);
