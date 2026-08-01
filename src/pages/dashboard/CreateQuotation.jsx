@@ -924,16 +924,38 @@ export default function CreateQuotation({
                       </div>
                     </div>
 
-                    {goToSettings && (
-                      <button
-                        type="button"
-                        onClick={goToSettings}
-                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-600 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        value={companyProfile?.id || ""}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const allProfiles = localDB.getCompanyProfiles();
+                          const selected = allProfiles.find(p => p.id === selectedId);
+                          if (selected) {
+                            setCompanyProfile(selected);
+                          }
+                        }}
+                        className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 rounded-xl text-xs font-extrabold cursor-pointer outline-none shadow-2xs"
+                        title="Switch company profile for current quotation"
                       >
-                        <Settings size={13} />
-                        <span>Edit Company Settings</span>
-                      </button>
-                    )}
+                        {localDB.getCompanyProfiles().map((p) => (
+                          <option key={p.id} value={p.id}>
+                            🏢 {p.companyName || "Unnamed Company"} {p.isDefault ? "⭐ (Default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+
+                      {goToSettings && (
+                        <button
+                          type="button"
+                          onClick={goToSettings}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-600 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Settings size={13} />
+                          <span>Edit Settings</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[11px] font-semibold text-slate-600">

@@ -4,12 +4,14 @@ import SettingsCard from "../../components/mobile/SettingsCard";
 import CloudStorageSettingsCard from "../../components/settings/CloudStorageSettingsCard";
 import { MobileInput } from "../../components/mobile/MobileFormCard";
 import DeleteAccountModal from "../../components/settings/DeleteAccountModal";
+import CreateCompanyModal from "../../components/settings/CreateCompanyModal";
+import ManageCompaniesModal from "../../components/settings/ManageCompaniesModal";
 import { localDB } from "../../utils/localDB";
 import { triggerAutoSync } from "../../utils/googleDriveProvider";
 import {
   Building2, FileText, Landmark, CheckCircle2, Save,
   AlertTriangle, Trash2, Image as ImageIcon, Shield, ScrollText, X,
-  ChevronRight, Mail, LifeBuoy, Download, Upload, Info, FileCheck
+  ChevronRight, Mail, LifeBuoy, Download, Upload, Info, FileCheck, Star, Plus, Settings2
 } from "lucide-react";
 
 export default function Settings({
@@ -20,11 +22,15 @@ export default function Settings({
   const [autoSaveDraft, setAutoSaveDraft] = useState(() => localStorage.getItem("autoSaveDraftEnabled") !== "false");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfile, setActiveProfile] = useState(null);
 
   const [form, setForm] = useState({
-    companyLogo: "", companyName: "", companyTagline: "",
+    id: "", companyLogo: "", companyName: "", companyTagline: "",
     email: "", phone: "", altPhone: "", website: "", address: "",
     city: "", state: "", pincode: "", country: "India", gstNo: "",
     defaultWarranty: "", defaultPaintBrand: "", defaultTerms: "", defaultNotes: "", defaultExclusions: "",
@@ -32,43 +38,68 @@ export default function Settings({
     signatoryName: "", designation: "", signatoryPhone: "", signatoryEmail: "", signatureImage: ""
   });
 
+  const refreshProfiles = () => {
+    const list = localDB.getCompanyProfiles();
+    const active = localDB.getActiveCompanyProfile();
+    setProfiles(list);
+    setActiveProfile(active);
+    loadProfileIntoForm(active);
+  };
+
+  const loadProfileIntoForm = (prof) => {
+    if (!prof) return;
+    setForm({
+      id: prof.id || "",
+      companyLogo: prof.companyLogo || "",
+      companyName: prof.companyName || "",
+      companyTagline: prof.companyTagline || prof.tagline || "",
+      email: prof.companyEmail || prof.email || "",
+      phone: prof.companyPhone || prof.phone || "",
+      altPhone: prof.companyAltPhone || prof.altPhone || "",
+      website: prof.website || "",
+      address: prof.companyAddress || prof.address || "",
+      city: prof.city || "",
+      state: prof.state || "",
+      pincode: prof.pincode || "",
+      country: prof.country || "India",
+      gstNo: prof.gstNo || "",
+      defaultWarranty: prof.defaultWarranty || "3 Years Warranty",
+      defaultPaintBrand: prof.defaultPaintBrand || "",
+      defaultTerms: prof.defaultTerms || "",
+      defaultNotes: prof.defaultNotes || "",
+      defaultExclusions: prof.defaultExclusions || "",
+      bankName: prof.bankDetails?.bankName || "",
+      accountHolder: prof.bankDetails?.accountHolder || "",
+      accountNumber: prof.bankDetails?.accountNumber || "",
+      ifscCode: prof.bankDetails?.ifscCode || "",
+      branch: prof.branch || prof.bankDetails?.branch || "",
+      upiId: prof.bankDetails?.upiId || "",
+      signatoryName: prof.signature?.name || "",
+      designation: prof.signature?.designation || "",
+      signatoryPhone: prof.signature?.phone || "",
+      signatoryEmail: prof.signature?.email || "",
+      signatureImage: prof.signature?.signatureImage || prof.companySignature || ""
+    });
+  };
+
   useEffect(() => {
-    const profile = localDB.getCompanyProfile();
-    if (profile) {
-      setForm(prev => ({
-        ...prev,
-        companyLogo: profile.companyLogo || "",
-        companyName: profile.companyName || "",
-        companyTagline: profile.companyTagline || "",
-        email: profile.companyEmail || profile.email || "",
-        phone: profile.companyPhone || profile.phone || "",
-        altPhone: profile.companyAltPhone || "",
-        website: profile.website || "",
-        address: profile.companyAddress || profile.address || "",
-        city: profile.city || "",
-        state: profile.state || "",
-        pincode: profile.pincode || "",
-        country: profile.country || "India",
-        gstNo: profile.gstNo || "",
-        defaultWarranty: profile.defaultWarranty || "12 Years Workmanship Warranty",
-        defaultPaintBrand: profile.defaultPaintBrand || "Asian Paints Royale / Berger Silk",
-        defaultTerms: profile.defaultTerms || "1. Quotation valid for 30 days.\n2. Payment terms: 50% advance, 30% mid-work, 20% completion.\n3. Taxes extra as applicable.",
-        defaultNotes: profile.defaultNotes || "Thank you for choosing our services. We are committed to delivering quality workmanship within agreed timelines.",
-        defaultExclusions: profile.defaultExclusions || "1. Major civil structural repairs.\n2. Electrical and plumbing modifications.\n3. High-rise external scaffolding above 15ft unless specified.",
-        bankName: profile.bankDetails?.bankName || "",
-        accountHolder: profile.bankDetails?.accountHolder || "",
-        accountNumber: profile.bankDetails?.accountNumber || "",
-        ifscCode: profile.bankDetails?.ifscCode || "",
-        branch: profile.bankDetails?.branch || "",
-        upiId: profile.bankDetails?.upiId || "",
-        signatoryName: profile.signature?.name || "",
-        designation: profile.signature?.designation || "",
-        signatoryPhone: profile.signature?.phone || "",
-        signatoryEmail: profile.signature?.email || "",
-        signatureImage: profile.signature?.signatureImage || profile.companySignature || ""
-      }));
-    }
+    refreshProfiles();
+    window.addEventListener("quotationDataUpdated", refreshProfiles);
+    return () => window.removeEventListener("quotationDataUpdated", refreshProfiles);
   }, []);
+
+  const handleSelectCompany = (e) => {
+    const targetId = e.target.value;
+    localDB.setActiveCompanyProfileId(targetId);
+    refreshProfiles();
+  };
+
+  const handleSetCurrentAsDefault = () => {
+    if (activeProfile && activeProfile.id) {
+      localDB.setDefaultCompanyProfile(activeProfile.id);
+      refreshProfiles();
+    }
+  };
 
   const handleChange = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
 
@@ -91,7 +122,9 @@ export default function Settings({
   };
 
   const handleSave = () => {
-    localDB.saveCompanyProfile({
+    const activeProf = localDB.getActiveCompanyProfile();
+    localDB.saveCompanyProfileById({
+      id: activeProf.id || form.id,
       companyLogo: form.companyLogo,
       companyName: form.companyName,
       companyTagline: form.companyTagline,
@@ -126,12 +159,11 @@ export default function Settings({
         signatureImage: form.signatureImage
       }
     });
-    
-    // Trigger auto-sync to update Google Drive Cloud Storage if enabled
-    triggerAutoSync("save");
 
+    triggerAutoSync("save");
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+    refreshProfiles();
   };
 
   const executeDeleteAccount = async () => {
@@ -167,14 +199,28 @@ export default function Settings({
         isLoading={isDeleting}
       />
 
+      <CreateCompanyModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={() => refreshProfiles()}
+      />
+
+      <ManageCompaniesModal
+        isOpen={isManageModalOpen}
+        onClose={() => setIsManageModalOpen(false)}
+        onOpenCreate={() => setIsCreateModalOpen(true)}
+        onProfilesUpdated={() => refreshProfiles()}
+      />
+
       <MobileHeader
         title="Company Settings"
         onBack={goToDashboard}
         right={
           <button
             onClick={handleSave}
-            className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-xl cursor-pointer shadow-xs active:scale-95 transition-all ${saved ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
-              }`}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-xl cursor-pointer shadow-xs active:scale-95 transition-all ${
+              saved ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
+            }`}
           >
             {saved ? <CheckCircle2 size={14} /> : <Save size={14} />}
             {saved ? "Saved" : "Save"}
@@ -183,8 +229,65 @@ export default function Settings({
       />
 
       <div className="w-full px-4 py-4 space-y-4 max-w-4xl mx-auto">
-        {/* 1. Company Information */}
-        <SettingsCard title="Company Information" subtitle="Single source of truth auto-filled on new quotations" icon={<Building2 size={18} />} iconBg="bg-blue-50 text-blue-600">
+        
+        {/* 1. Company Profiles Card */}
+        <SettingsCard
+          title="Company Profiles"
+          subtitle="Manage multiple company, brand or franchise profiles"
+          icon={<Building2 size={18} />}
+          iconBg="bg-blue-50 text-blue-600"
+        >
+          {/* 🏢 MULTI-COMPANY SELECTOR BAR */}
+          <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 mb-5 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                Current Active Company:
+                {activeProfile?.isDefault && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
+                    <Star size={10} className="fill-emerald-600 text-emerald-600" /> Default
+                  </span>
+                )}
+              </label>
+
+              <div className="flex items-center gap-1.5">
+                {!activeProfile?.isDefault && (
+                  <button
+                    onClick={handleSetCurrentAsDefault}
+                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                    title="Set this profile as the default for new quotations"
+                  >
+                    <Star size={12} /> Set Default
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                >
+                  <Plus size={13} /> Create New
+                </button>
+                <button
+                  onClick={() => setIsManageModalOpen(true)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                >
+                  <Settings2 size={13} /> Manage All
+                </button>
+              </div>
+            </div>
+
+            {/* Select Dropdown */}
+            <select
+              value={activeProfile?.id || ""}
+              onChange={handleSelectCompany}
+              className="w-full h-11 px-3.5 bg-white border border-slate-200/90 rounded-xl font-extrabold text-xs text-slate-900 outline-none focus:border-blue-600 shadow-2xs transition-all cursor-pointer"
+            >
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.companyName || "Unnamed Company"} {p.isDefault ? "⭐ (Default)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-4">
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
               {form.companyLogo
@@ -200,6 +303,7 @@ export default function Settings({
               </label>
             </div>
           </div>
+
           <div className="space-y-3">
             <MobileInput label="Company Name" value={form.companyName} onChange={e => handleChange("companyName", e.target.value)} placeholder="e.g. VisionX Technologies" />
             <MobileInput label="Tagline / Slogan" value={form.companyTagline} onChange={e => handleChange("companyTagline", e.target.value)} placeholder="e.g. Premium Painting & Interior Solutions" />
@@ -290,8 +394,9 @@ export default function Settings({
                 setAutoSaveDraft(newVal);
                 localStorage.setItem("autoSaveDraftEnabled", String(newVal));
               }}
-              className={`w-12 h-6 rounded-full p-1 transition-colors cursor-pointer shrink-0 ${autoSaveDraft ? "bg-blue-600" : "bg-slate-300"
-                }`}
+              className={`w-12 h-6 rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                autoSaveDraft ? "bg-blue-600" : "bg-slate-300"
+              }`}
             >
               <div className={`w-4 h-4 bg-white rounded-full transition-transform ${autoSaveDraft ? "translate-x-6" : "translate-x-0"}`} />
             </button>

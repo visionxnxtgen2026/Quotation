@@ -265,8 +265,166 @@ export const localDB = {
     return this.saveQuotation(quote);
   },
 
-  // ── 🏢 COMPANY PROFILE (SINGLE SOURCE OF TRUTH) ──
-  getCompanyProfile() {
+  // ── 🏢 MULTI-COMPANY PROFILES MANAGEMENT ──
+  getCompanyProfiles() {
+    try {
+      const data = localStorage.getItem("quotegen_company_profiles_list");
+      if (data) {
+        const list = JSON.parse(data);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+      
+      const legacyProfile = this.getCompanyProfileLegacy();
+      const initialProfile = {
+        id: "cp_default",
+        companyName: legacyProfile.companyName || "My Company",
+        isDefault: true,
+        ...legacyProfile,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const initialList = [initialProfile];
+      localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(initialList));
+      localStorage.setItem("quotegen_active_company_id", "cp_default");
+      return initialList;
+    } catch (e) {
+      console.error("Error reading company profiles list:", e);
+      return [DEFAULT_COMPANY_PROFILE];
+    }
+  },
+
+  getDefaultCompanyProfile() {
+    const list = this.getCompanyProfiles();
+    return list.find(p => p.isDefault) || list[0] || DEFAULT_COMPANY_PROFILE;
+  },
+
+  getActiveCompanyProfile() {
+    const activeId = localStorage.getItem("quotegen_active_company_id");
+    const list = this.getCompanyProfiles();
+    if (activeId) {
+      const found = list.find(p => p.id === activeId);
+      if (found) return found;
+    }
+    return this.getDefaultCompanyProfile();
+  },
+
+  setActiveCompanyProfileId(id) {
+    localStorage.setItem("quotegen_active_company_id", id);
+    window.dispatchEvent(new Event("quotationDataUpdated"));
+  },
+
+  setDefaultCompanyProfile(id) {
+    const list = this.getCompanyProfiles().map(p => ({
+      ...p,
+      isDefault: p.id === id
+    }));
+    localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(list));
+    localStorage.setItem("quotegen_active_company_id", id);
+    const defaultProfile = list.find(p => p.id === id);
+    if (defaultProfile) {
+      localStorage.setItem(STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(defaultProfile));
+    }
+    window.dispatchEvent(new Event("quotationDataUpdated"));
+    return list;
+  },
+
+  saveCompanyProfileById(profileData) {
+    try {
+      const list = this.getCompanyProfiles();
+      const id = profileData.id || `cp_${Date.now()}`;
+      
+      const existingIdx = list.findIndex(p => p.id === id);
+      const isDefault = profileData.isDefault !== undefined 
+        ? profileData.isDefault 
+        : (existingIdx >= 0 ? list[existingIdx].isDefault : list.length === 0);
+
+      const updatedProfile = {
+        ...DEFAULT_COMPANY_PROFILE,
+        ...(existingIdx >= 0 ? list[existingIdx] : {}),
+        ...profileData,
+        id,
+        isDefault,
+        updatedAt: new Date().toISOString(),
+        createdAt: (existingIdx >= 0 ? list[existingIdx].createdAt : new Date().toISOString()),
+      };
+
+      if (existingIdx >= 0) {
+        list[existingIdx] = updatedProfile;
+      } else {
+        list.push(updatedProfile);
+      }
+
+      localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(list));
+      localStorage.setItem("quotegen_active_company_id", id);
+
+      if (isDefault) {
+        localStorage.setItem(STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(updatedProfile));
+      }
+
+      window.dispatchEvent(new Event("quotationDataUpdated"));
+      return updatedProfile;
+    } catch (e) {
+      console.error("LocalDB Save Company Profile Error:", e);
+      return null;
+    }
+  },
+
+  createCompanyProfile({ name, logo }) {
+    const newProfile = {
+      id: `cp_${Date.now()}`,
+      companyName: name || "New Company",
+      companyLogo: logo || "",
+      isDefault: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return this.saveCompanyProfileById(newProfile);
+  },
+
+  duplicateCompanyProfile(id) {
+    const list = this.getCompanyProfiles();
+    const target = list.find(p => p.id === id);
+    if (!target) return null;
+    
+    const clone = JSON.parse(JSON.stringify(target));
+    clone.id = `cp_${Date.now()}`;
+    clone.companyName = `${clone.companyName} (Copy)`;
+    clone.isDefault = false;
+    clone.createdAt = new Date().toISOString();
+    clone.updatedAt = new Date().toISOString();
+
+    list.push(clone);
+    localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(list));
+    localStorage.setItem("quotegen_active_company_id", clone.id);
+    window.dispatchEvent(new Event("quotationDataUpdated"));
+    return clone;
+  },
+
+  deleteCompanyProfile(id) {
+    const list = this.getCompanyProfiles();
+    const target = list.find(p => p.id === id);
+    if (!target) return false;
+
+    if (target.isDefault) {
+      alert("Cannot delete the default company profile. Set another company profile as default first.");
+      return false;
+    }
+
+    const filtered = list.filter(p => p.id !== id);
+    localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(filtered));
+    
+    const activeId = localStorage.getItem("quotegen_active_company_id");
+    if (activeId === id) {
+      const defaultProf = filtered.find(p => p.isDefault) || filtered[0];
+      if (defaultProf) {
+        localStorage.setItem("quotegen_active_company_id", defaultProf.id);
+      }
+    }
+    window.dispatchEvent(new Event("quotationDataUpdated"));
+    return true;
+  },
+
+  getCompanyProfileLegacy() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.COMPANY_PROFILE);
       if (!data) return DEFAULT_COMPANY_PROFILE;
@@ -288,17 +446,13 @@ export const localDB = {
     }
   },
 
+  getCompanyProfile() {
+    return this.getActiveCompanyProfile();
+  },
+
   saveCompanyProfile(profile) {
-    try {
-      const current = this.getCompanyProfile();
-      const updated = { ...current, ...profile };
-      localStorage.setItem(STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(updated));
-      window.dispatchEvent(new Event("quotationDataUpdated"));
-      return updated;
-    } catch (e) {
-      console.error("LocalDB Save Profile Error:", e);
-      return null;
-    }
+    const active = this.getActiveCompanyProfile();
+    return this.saveCompanyProfileById({ ...active, ...profile });
   },
 
   // ── 📊 STORAGE METRICS ──
@@ -332,6 +486,8 @@ export const localDB = {
       version: "2.0-offline",
       exportedAt: new Date().toISOString(),
       companyProfile: this.getCompanyProfile(),
+      companyProfiles: this.getCompanyProfiles(),
+      activeCompanyId: localStorage.getItem("quotegen_active_company_id"),
       quotations: this.getQuotations(),
       draft: localStorage.getItem(STORAGE_KEYS.DRAFT) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.DRAFT)) : null,
       settings: localStorage.getItem(STORAGE_KEYS.SETTINGS) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS)) : null,
@@ -351,7 +507,7 @@ export const localDB = {
     try {
       const parsed = typeof jsonData === "string" ? JSON.parse(jsonData) : jsonData;
 
-      if (!parsed || (!parsed.quotations && !parsed.companyProfile)) {
+      if (!parsed || (!parsed.quotations && !parsed.companyProfile && !parsed.companyProfiles)) {
         throw new Error("Invalid backup JSON format.");
       }
 
@@ -359,8 +515,14 @@ export const localDB = {
         localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(parsed.quotations));
       }
 
-      if (parsed.companyProfile) {
+      if (Array.isArray(parsed.companyProfiles)) {
+        localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(parsed.companyProfiles));
+      } else if (parsed.companyProfile) {
         localStorage.setItem(STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(parsed.companyProfile));
+      }
+
+      if (parsed.activeCompanyId) {
+        localStorage.setItem("quotegen_active_company_id", parsed.activeCompanyId);
       }
 
       if (parsed.draft) {
