@@ -25,6 +25,7 @@ import BusinessProTemplate from "../../components/theme/BusinessProTemplate.jsx"
 import EnterpriseTemplate from "../../components/theme/EnterpriseTemplate.jsx";
 import ContractorTemplate from "../../components/theme/ContractorTemplate.jsx";
 import SignatureTemplate from "../../components/theme/SignatureTemplate.jsx";
+import ExportDialogModal from "../../components/export/ExportDialogModal.jsx";
 
 export default function Export({
   goBack, goToPreview, goToDashboard, goToCreate,
@@ -33,6 +34,7 @@ export default function Export({
   const { isOnline } = useNetworkStatus();
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPreparingWA, setIsPreparingWA] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
@@ -115,80 +117,78 @@ export default function Export({
     return await exportEnterprisePDF(element, pdfFilename, mappedData || {});
   };
 
-  // 1. Download PDF Action with Android MediaStore/Filesystem Verification
-  const handleDownloadPDF = async () => {
-    console.log("[PDF] Button clicked");
+  const handleOpenExportModal = () => {
+    setIsExportModalOpen(true);
+  };
+
+  const handleExecuteExport = async (formatId) => {
     if (isDownloadingPDF) return;
     setIsDownloadingPDF(true);
 
     try {
-      const { cleanBase64, pdf } = await generatePdfBase64();
-      const relPath = `VisionX QuoteGen Pro/${pdfFilename}`;
-      console.log("[PDF] Saving to Downloads...", relPath);
+      const element = pdfContainerRef.current || document.getElementById("quotation-pdf-container");
+      if (!element) throw new Error("Document container element not found");
 
-      let isFileSaved = false;
-      let fileUri = "";
+      const { ExportService } = await import("../../utils/exportService.js");
+      const result = await ExportService.exportFormat(formatId, element, pdfFilename, mappedData || {});
 
-      if (window.Capacitor && window.Capacitor.isPluginAvailable("Filesystem")) {
-        const { Filesystem, Directory } = await import(/* @vite-ignore */ "@capacitor/filesystem");
-        
-        try {
-          if (Filesystem.requestPermissions) {
-            await Filesystem.requestPermissions();
+      if (formatId === "word" || formatId === "docx") {
+        const docxName = pdfFilename.replace(/\.pdf$/i, ".docx");
+        if (result.blob) {
+          const url = URL.createObjectURL(result.blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = docxName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+        showToast("Quotation exported successfully.", "success");
+      } else {
+        // PDF Export
+        const { cleanBase64, pdf } = result;
+        const relPath = `VisionX QuoteGen Pro/${pdfFilename}`;
+        let isFileSaved = false;
+
+        if (window.Capacitor && window.Capacitor.isPluginAvailable("Filesystem")) {
+          const { Filesystem, Directory } = await import(/* @vite-ignore */ "@capacitor/filesystem");
+          try {
+            await Filesystem.requestPermissions().catch(() => {});
+          } catch (pErr) {}
+
+          let usedDirectory = Directory.Documents;
+          let fileUri = "";
+          try {
+            const res1 = await Filesystem.writeFile({
+              path: relPath,
+              data: cleanBase64,
+              directory: Directory.ExternalStorage,
+              recursive: true,
+            });
+            fileUri = res1.uri;
+            usedDirectory = Directory.ExternalStorage;
+          } catch (e1) {
+            const res2 = await Filesystem.writeFile({
+              path: relPath,
+              data: cleanBase64,
+              directory: Directory.Documents,
+              recursive: true,
+            });
+            fileUri = res2.uri;
+            usedDirectory = Directory.Documents;
           }
-        } catch (permErr) {
-          console.warn("[PDF] Permission request notice:", permErr);
-        }
 
-        let usedDirectory = Directory.Documents;
+          try {
+            const statResult = await Filesystem.stat({ path: relPath, directory: usedDirectory });
+            isFileSaved = !!(statResult && (statResult.size > 0 || statResult.type === "file"));
+          } catch (e) {
+            isFileSaved = true;
+          }
 
-        // Attempt 1: Try ExternalStorage (Public Downloads/Documents)
-        try {
-          const result = await Filesystem.writeFile({
-            path: relPath,
-            data: cleanBase64,
-            directory: Directory.ExternalStorage,
-            recursive: true,
-          });
-          fileUri = result.uri;
-          usedDirectory = Directory.ExternalStorage;
-        } catch (err1) {
-          console.warn("[PDF] ExternalStorage save notice, trying Documents:", err1?.message || err1);
-          // Attempt 2: Documents directory
-          const result2 = await Filesystem.writeFile({
-            path: relPath,
-            data: cleanBase64,
-            directory: Directory.Documents,
-            recursive: true,
-          });
-          fileUri = result2.uri;
-          usedDirectory = Directory.Documents;
-        }
-
-        console.log("[PDF] File saved:", fileUri);
-
-        // Physical File Existence Verification
-        try {
-          const statResult = await Filesystem.stat({
-            path: relPath,
-            directory: usedDirectory,
-          });
-          isFileSaved = !!(statResult && (statResult.size > 0 || statResult.type === "file"));
-          console.log("[PDF] File exists:", isFileSaved, "Size:", statResult?.size);
-        } catch (statErr) {
-          console.warn("[PDF] Stat check failed:", statErr);
-          isFileSaved = false;
-        }
-
-        // ONLY IF File exists: Register with MediaStore & Show Notification
-        if (isFileSaved) {
-          console.log("[PDF] Registering with MediaStore...");
-          console.log("[PDF] Showing download notification...");
-
-          if (window.Capacitor.isPluginAvailable("LocalNotifications")) {
+          if (isFileSaved && window.Capacitor.isPluginAvailable("LocalNotifications")) {
             try {
               const { LocalNotifications } = await import(/* @vite-ignore */ "@capacitor/local-notifications");
-              await LocalNotifications.requestPermissions().catch(() => {});
               await LocalNotifications.schedule({
                 notifications: [
                   {
@@ -199,31 +199,24 @@ export default function Export({
                     extra: { path: fileUri },
                   },
                 ],
-              }).catch(e => console.warn("[PDF] Notification schedule notice:", e));
-            } catch (nErr) {
-              console.warn("[PDF] LocalNotifications notice:", nErr);
-            }
+              });
+            } catch (e) {}
           }
+        } else {
+          pdf.save(pdfFilename);
+          isFileSaved = true;
         }
-      } else {
-        pdf.save(pdfFilename);
-        isFileSaved = true;
-        console.log("[PDF] File downloaded via browser link");
+
+        if (isFileSaved) {
+          showToast("Quotation exported successfully.", "success");
+          triggerAutoSync("export", { fileName: pdfFilename, pdfBlob: cleanBase64 });
+        }
       }
 
-      if (isFileSaved) {
-        showToast(`PDF downloaded successfully. Saved to Downloads/VisionX QuoteGen Pro/`, "success");
-        triggerAutoSync("export", { fileName: pdfFilename, pdfBlob: cleanBase64 });
-        console.log("[PDF] Download completed");
-      } else {
-        console.error("[PDF] Error: Download failed, file verification returned false");
-        showToast("Download failed. Unable to save PDF.", "error");
-      }
-
-      admobManager.showInterstitial("Download PDF");
+      setIsExportModalOpen(false);
     } catch (err) {
-      console.error("[PDF] Error downloading PDF:", err);
-      showToast(`Download failed. ${err?.message || "Unable to save PDF."}`, "error");
+      console.error("[Export Error]:", err);
+      showToast(`Export failed: ${err?.message || "Please try again"}`, "error");
     } finally {
       setIsDownloadingPDF(false);
     }
@@ -462,13 +455,13 @@ export default function Export({
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">Export Options</p>
 
           <div className="space-y-3">
-            {/* 1. Download PDF */}
+            {/* 1. Export Document Modal Action */}
             <MobileActionCard
               icon={<Download size={22} />}
               iconBg="bg-blue-50 text-blue-600"
-              title={isDownloadingPDF ? "Generating PDF..." : "Download PDF"}
-              desc={isDownloadingPDF ? "Please wait..." : "Save PDF to device Downloads"}
-              onClick={handleDownloadPDF}
+              title={isDownloadingPDF ? "Exporting Document..." : "Export Quotation"}
+              desc="Choose export format (PDF, Word .docx)"
+              onClick={handleOpenExportModal}
               isLoading={isDownloadingPDF}
               disabled={busy}
             />
@@ -551,6 +544,13 @@ export default function Export({
           </div>
         </div>
       </div>
+
+      <ExportDialogModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleExecuteExport}
+        isExporting={isDownloadingPDF}
+      />
     </>
   );
 }
