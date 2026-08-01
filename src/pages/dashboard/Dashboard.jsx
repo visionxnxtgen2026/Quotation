@@ -5,6 +5,8 @@ import QuickActionCard from "../../components/mobile/QuickActionCard";
 import DashboardCard from "../../components/mobile/DashboardCard";
 import FloatingActionButton from "../../components/mobile/FloatingActionButton";
 import BannerAd from "../../components/mobile/BannerAd";
+import CloudSyncButton from "../../components/mobile/CloudSyncButton";
+import CloudSyncModal from "../../components/settings/CloudSyncModal";
 import { admobManager } from "../../utils/admobManager";
 import { localDB } from "../../utils/localDB";
 import {
@@ -27,6 +29,7 @@ export default function Dashboard({
   const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [deleteModal, setDeleteModal] = useState({ open: false, quote: null, loading: false });
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
 
   // Today's date string for Android native header greeting
   const todayDateStr = new Date().toLocaleDateString("en-IN", {
@@ -58,7 +61,11 @@ export default function Dashboard({
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    window.addEventListener("quotationDataUpdated", fetchData);
+    return () => window.removeEventListener("quotationDataUpdated", fetchData);
+  }, []);
 
   const handleNewQuote = () => {
     if (setQuotationId) setQuotationId(null);
@@ -93,7 +100,18 @@ export default function Dashboard({
 
   return (
     <div className="bg-[#F8FAFC] min-h-screen font-sans pb-24 relative">
-      <MobileHeader logo title="VisionX QuoteGen Pro" subtitle="Offline Quotation Software" />
+      <MobileHeader
+        logo
+        title="VisionX QuoteGen Pro"
+        subtitle="Offline Quotation Software"
+        right={<CloudSyncButton onClick={() => setIsCloudModalOpen(true)} />}
+      />
+
+      {/* Cloud Storage Bottom Sheet / Centered Modal */}
+      <CloudSyncModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+      />
 
       {/* Toast */}
       {toast.show && (

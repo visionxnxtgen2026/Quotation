@@ -123,7 +123,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     });
   }
 
-  /** Disconnect Google Drive account */
+  /** Disconnect Google Drive account without deleting files */
   async disconnect() {
     if (this.accessToken && window.google?.accounts?.oauth2) {
       try {
@@ -326,7 +326,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     ]);
 
     if (profile.companyLogo && profile.companyLogo.startsWith("data:")) {
-      await this.upsertFile(folders.companyId, "company-logo.png", profile.companyLogo, "image/png");
+      await this.upsertFile(folders.companyId, "logo.png", profile.companyLogo, "image/png");
     }
   }
 
@@ -337,18 +337,95 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     return this.upsertFile(folders.draftsId, "draft.json", JSON.stringify(draftData, null, 2));
   }
 
+  /** Perform full immediate Backup Now */
+  async backupAllNow(onProgress = null) {
+    if (onProgress) onProgress("Initializing Cloud Backup...", 10);
+    const folders = await this.getFolderStructure();
+
+    if (onProgress) onProgress("Backing up Company Profile & Settings...", 30);
+    await this.uploadCompanyProfile();
+
+    if (onProgress) onProgress("Backing up Local Quotations...", 60);
+    const quotations = localDB.getQuotations();
+    for (let i = 0; i < quotations.length; i++) {
+      await this.uploadQuotation(quotations[i]);
+    }
+
+    if (onProgress) onProgress("Backing up Active Drafts & Templates...", 85);
+    const draft = localStorage.getItem("previewDraft");
+    if (draft) {
+      try {
+        await this.uploadDraft(JSON.parse(draft));
+      } catch (e) { }
+    }
+
+    const backupPayload = {
+      app: "QuoteGen Pro",
+      version: "2.0-cloud",
+      exportedAt: new Date().toISOString(),
+      companyProfile: localDB.getCompanyProfile(),
+      quotations: localDB.getQuotations(),
+      draft: localStorage.getItem("previewDraft") ? JSON.parse(localStorage.getItem("previewDraft")) : null,
+    };
+    await this.upsertFile(folders.backupsId, "quotegen_pro_backup.json", JSON.stringify(backupPayload, null, 2));
+
+    const nowIso = new Date().toISOString();
+    this.lastSync = nowIso;
+    localStorage.setItem("gdrive_last_sync_time", nowIso);
+    window.dispatchEvent(new Event("gdriveStatusUpdated"));
+
+    if (onProgress) onProgress("✓ Full Backup Completed Successfully!", 100);
+    return { success: true, count: quotations.length };
+  }
+
+  /** Fetch Remote Quotations List from Google Drive for Restore Screen */
+  async fetchRemoteQuotationsList() {
+    const token = await this.authenticate();
+    const folders = await this.getFolderStructure();
+
+    const query = encodeURIComponent(`'${folders.quotationsId}' in parents and trashed=false`);
+    const res = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime,webViewLink)`);
+
+    const items = [];
+    if (res.files && res.files.length > 0) {
+      for (const f of res.files) {
+        try {
+          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (contentRes.ok) {
+            const qData = await contentRes.json();
+            items.push({
+              fileId: f.id,
+              quotationNo: qData.quotationNo || qData.projectDetails?.referenceNo || f.name.replace(".json", ""),
+              clientName: qData.clientName || qData.projectDetails?.clientName || "Client",
+              projectName: qData.projectDetails?.projectName || qData.projectName || "Project",
+              updatedAt: qData.updatedAt || f.modifiedTime || f.createdTime,
+              data: qData,
+              driveUrl: f.webViewLink,
+            });
+          }
+        } catch (readErr) {
+          console.warn("[GoogleDrive] Error parsing remote quotation file:", readErr);
+        }
+      }
+    }
+
+    return items;
+  }
+
   /** Performs full bidirectional Sync (Upload Local + Fetch & Merge Remote) */
   async syncNow(onProgress = null) {
-    if (onProgress) onProgress("Connecting to Google Drive...");
+    if (onProgress) onProgress("Connecting to Google Drive...", 10);
     const token = await this.authenticate();
     const folders = await this.getFolderStructure();
 
     // 1. Upload Company Profile & Settings
-    if (onProgress) onProgress("Syncing Company Settings...");
+    if (onProgress) onProgress("Syncing Company Settings...", 30);
     await this.uploadCompanyProfile();
 
     // 2. Upload Local Quotations
-    if (onProgress) onProgress("Syncing Quotation History...");
+    if (onProgress) onProgress("Syncing Quotation History...", 60);
     const quotations = localDB.getQuotations();
     for (const q of quotations) {
       await this.uploadQuotation(q);
@@ -363,7 +440,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     }
 
     // 4. Upload Complete Weekly Backup JSON
-    if (onProgress) onProgress("Creating Weekly Cloud Backup...");
+    if (onProgress) onProgress("Creating Weekly Cloud Backup...", 80);
     const backupPayload = {
       app: "QuoteGen Pro",
       version: "2.0-cloud",
@@ -375,7 +452,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     await this.upsertFile(folders.backupsId, "quotegen_pro_backup.json", JSON.stringify(backupPayload, null, 2));
 
     // 5. Fetch Remote Quotations & Merge
-    if (onProgress) onProgress("Checking for remote updates...");
+    if (onProgress) onProgress("Checking for remote updates...", 90);
     const listQuery = encodeURIComponent(`'${folders.quotationsId}' in parents and trashed=false`);
     const remoteRes = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${listQuery}&fields=files(id,name)`);
     
@@ -405,13 +482,13 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     window.dispatchEvent(new Event("gdriveStatusUpdated"));
     window.dispatchEvent(new Event("quotationDataUpdated"));
 
-    if (onProgress) onProgress("✓ Cloud Sync Completed");
+    if (onProgress) onProgress("✓ Cloud Sync Completed", 100);
     return { success: true, lastSync: nowIso, syncedCount: quotations.length + restoredCount };
   }
 
   /** Auto-Restores Cloud Data when connecting on a new device */
   async autoRestore(onProgress = null) {
-    if (onProgress) onProgress("Searching for Google Drive backup...");
+    if (onProgress) onProgress("Searching for Google Drive backup...", 10);
     const token = await this.authenticate();
     const folders = await this.getFolderStructure();
 
