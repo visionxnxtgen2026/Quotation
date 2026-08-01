@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, Filter, ArrowUpDown, LayoutGrid, List, CheckSquare, Square,
-  Download, Trash2, ExternalLink, Copy, Edit3, Lock, Globe, QrCode, FileText, MoreVertical
+  Download, Trash2, ExternalLink, Copy, Edit3, Lock, Globe, QrCode, FileText, Share2
 } from "lucide-react";
 import { localDB } from "../../../utils/localDB";
 import { googleDriveProvider } from "../../../utils/googleDriveProvider";
@@ -11,6 +11,7 @@ export default function UploadedFilesManager({
   onCopyLink,
   onOpenRename,
   onShowQR,
+  onOpenShareModal,
   onToast
 }) {
   const [files, setFiles] = useState([]);
@@ -294,11 +295,18 @@ export default function UploadedFilesManager({
                   </div>
 
                   {/* Visibility badge */}
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
-                    file.visibility === "public" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
-                  }`}>
-                    {file.visibility === "public" ? "Public" : "Private"}
-                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onOpenShareModal) onOpenShareModal(file);
+                    }}
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 cursor-pointer hover:scale-105 transition-transform ${
+                      file.visibility === "public" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                    }`}
+                    title="Click to manage permissions & share settings"
+                  >
+                    {file.visibility === "public" ? "🌍 Public" : "🔒 Private"}
+                  </button>
                 </div>
 
                 {/* File Meta info */}
@@ -310,6 +318,17 @@ export default function UploadedFilesManager({
                 {/* Inline Action Buttons */}
                 <div className="flex items-center justify-between gap-1 pt-1">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onOpenShareModal) onOpenShareModal(file);
+                      }}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                      title="Share & Permissions"
+                    >
+                      <Share2 size={14} />
+                    </button>
+
                     {file.shareUrl && (
                       <button
                         onClick={(e) => {

@@ -26,6 +26,7 @@ import SignatureTemplate from "../../components/theme/SignatureTemplate.jsx";
 import ExportFormatSheet from "../../components/export/ExportFormatSheet.jsx";
 import ExportLoadingScreen from "../../components/export/ExportLoadingScreen.jsx";
 import ExportSuccessScreen from "../../components/export/ExportSuccessScreen.jsx";
+import ShareDialogModal from "../../components/export/ShareDialogModal.jsx";
 
 /**
  * Export page — 3-step premium export flow
@@ -225,6 +226,9 @@ export default function Export({
     setTimeout(() => goBack?.(), 300);
   };
 
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <>
@@ -298,8 +302,27 @@ export default function Export({
           onGoogleDrive={handleGoogleDrive}
           isUploadingDrive={isUploadingDrive}
           driveResult={driveResult}
+          onOpenShareModal={() => setShowShareModal(true)}
         />
       )}
+
+      {/* Premium Share Dialog Modal */}
+      <ShareDialogModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        file={
+          localDB.getCloudFileById(quotationId || mappedData?.id) || {
+            fileName: exportedFilename || `${baseFilename}.pdf`,
+            driveFileId: driveResult?.driveFileId || null,
+            shareUrl: driveResult?.driveUrl || null,
+            visibility: "public",
+            allowedEmails: [localStorage.getItem("gdrive_user_email") || "owner@visionx.com"],
+          }
+        }
+        onFileUpdated={() => {
+          window.dispatchEvent(new Event("cloudFilesUpdated"));
+        }}
+      />
     </>
   );
 }

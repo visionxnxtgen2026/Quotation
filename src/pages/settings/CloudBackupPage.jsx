@@ -8,6 +8,7 @@ import SyncHistoryTimeline from "../../components/settings/cloud/SyncHistoryTime
 import StorageAnalyticsCard from "../../components/settings/cloud/StorageAnalyticsCard";
 import FileDetailsDrawer from "../../components/settings/cloud/FileDetailsDrawer";
 import QRCodeModal from "../../components/settings/cloud/QRCodeModal";
+import ShareDialogModal from "../../components/export/ShareDialogModal";
 import { localDB } from "../../utils/localDB";
 import { googleDriveProvider } from "../../utils/googleDriveProvider";
 import {
@@ -25,6 +26,7 @@ export default function CloudBackupPage({ onBack }) {
   // Selected file drawers & modals state
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
+  const [shareModalState, setShareModalState] = useState({ isOpen: false, file: null });
   const [qrModalState, setQrModalState] = useState({ isOpen: false, url: "", fileName: "" });
   const [renameModalState, setRenameModalState] = useState({ isOpen: false, file: null, newName: "" });
 
@@ -145,6 +147,10 @@ export default function CloudBackupPage({ onBack }) {
             onCopyLink={handleCopyLink}
             onOpenRename={handleOpenRenameModal}
             onShowQR={handleShowQR}
+            onOpenShareModal={(file) => {
+              setSelectedFile(file);
+              setShareModalState({ isOpen: true, file });
+            }}
             onToast={showToast}
           />
         )}
@@ -174,6 +180,22 @@ export default function CloudBackupPage({ onBack }) {
         onOpenRename={handleOpenRenameModal}
         onDelete={handleDeleteFile}
         onShowQR={handleShowQR}
+        onOpenShareModal={(file) => {
+          setSelectedFile(file);
+          setShareModalState({ isOpen: true, file });
+        }}
+      />
+
+      {/* Share Dialog Modal */}
+      <ShareDialogModal
+        isOpen={shareModalState.isOpen}
+        onClose={() => setShareModalState({ isOpen: false, file: null })}
+        file={shareModalState.file || selectedFile}
+        onFileUpdated={(updated) => {
+          setSelectedFile(updated);
+          window.dispatchEvent(new Event("cloudFilesUpdated"));
+        }}
+        onToast={showToast}
       />
 
       {/* QR Code Modal */}

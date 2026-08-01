@@ -382,6 +382,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
   /** Set file permissions: public (anyone reader) vs private (specific allowed emails) */
   async setFileVisibility(fileId, visibility = "public", allowedEmails = []) {
     const token = await this.authenticate();
+    
     if (visibility === "public") {
       try {
         await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
@@ -395,28 +396,68 @@ export class GoogleDriveProvider extends BaseStorageProvider {
             type: "anyone",
           }),
         });
+
+        // Get updated share URL
+        const fileInfo = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,webViewLink,webContentLink`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(r => r.json());
+
+        return {
+          success: true,
+          shareUrl: fileInfo.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+        };
       } catch (e) {
         console.warn("[GoogleDrive] Public permission notice:", e);
+        return { success: false, shareUrl: `https://drive.google.com/file/d/${fileId}/view` };
       }
-    } else if (visibility === "private" && Array.isArray(allowedEmails) && allowedEmails.length > 0) {
-      for (const email of allowedEmails) {
-        if (!email || !email.includes("@")) continue;
-        try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              role: "reader",
-              type: "user",
-              emailAddress: email.trim(),
-            }),
-          });
-        } catch (e) {
-          console.warn(`[GoogleDrive] Permission notice for ${email}:`, e);
+    } else if (visibility === "private") {
+      try {
+        // List existing permissions to revoke 'anyone' public link access
+        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (permRes.ok) {
+          const permData = await permRes.json();
+          if (permData.permissions) {
+            for (const p of permData.permissions) {
+              if (p.type === "anyone") {
+                await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${p.id}`, {
+                  method: "DELETE",
+                  headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => {});
+              }
+            }
+          }
         }
+
+        // Grant access to allowed emails
+        if (Array.isArray(allowedEmails) && allowedEmails.length > 0) {
+          for (const email of allowedEmails) {
+            if (!email || !email.includes("@")) continue;
+            try {
+              await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  role: "reader",
+                  type: "user",
+                  emailAddress: email.trim(),
+                }),
+              });
+            } catch (e) {
+              console.warn(`[GoogleDrive] Private permission notice for ${email}:`, e);
+            }
+          }
+        }
+
+        return { success: true, shareUrl: null };
+      } catch (e) {
+        console.warn("[GoogleDrive] Private permission notice:", e);
+        return { success: false, shareUrl: null };
       }
     }
   }

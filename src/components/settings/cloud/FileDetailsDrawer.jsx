@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ExternalLink, Copy, Download, Trash2, Edit3, Shield, Eye,
-  Clock, Folder, HardDrive, QrCode, Check, History, Lock, Globe
+  Clock, Folder, HardDrive, QrCode, Check, History, Lock, Globe, Share2
 } from "lucide-react";
 import { localDB } from "../../../utils/localDB";
 
@@ -14,6 +14,7 @@ export default function FileDetailsDrawer({
   onOpenRename,
   onDelete,
   onShowQR,
+  onOpenShareModal,
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -94,11 +95,15 @@ export default function FileDetailsDrawer({
             {/* Document Preview Box */}
             <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-inner flex flex-col items-center justify-center relative overflow-hidden group">
               <div className="absolute top-3 right-3">
-                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
-                  file.visibility === "public" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                }`}>
+                <button
+                  onClick={() => onOpenShareModal && onOpenShareModal(file)}
+                  className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider cursor-pointer hover:scale-105 transition-transform ${
+                    file.visibility === "public" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}
+                  title="Click to manage permissions"
+                >
                   {file.visibility === "public" ? "🌐 Public" : "🔒 Private"}
-                </span>
+                </button>
               </div>
               <span className="text-4xl my-2">📄</span>
               <p className="text-xs font-black text-white truncate max-w-[240px] mt-1">{file.fileName}</p>
@@ -107,18 +112,13 @@ export default function FileDetailsDrawer({
 
             {/* Main Action Buttons */}
             <div className="grid grid-cols-3 gap-2">
-              {file.shareUrl && (
-                <a
-                  href={file.shareUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => localDB.incrementFileViewCount(file.id)}
-                  className="flex flex-col items-center justify-center p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-2xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  <ExternalLink size={16} className="mb-1" />
-                  <span>Open Link</span>
-                </a>
-              )}
+              <button
+                onClick={() => onOpenShareModal && onOpenShareModal(file)}
+                className="flex flex-col items-center justify-center p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-2xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                <Share2 size={16} className="mb-1" />
+                <span>Share Access</span>
+              </button>
 
               <button
                 onClick={handleCopy}
