@@ -15,6 +15,29 @@ const STORAGE_KEYS = {
   REF_SEQ: "quotation_ref_seq",
   REF_DATE: "quotation_ref_date",
   SETTINGS: "quotegen_settings",
+  CLOUD_FILES: "quotegen_cloud_files",
+  SYNC_LOGS: "quotegen_cloud_sync_logs",
+  CLOUD_SETTINGS: "quotegen_cloud_settings",
+};
+
+const DEFAULT_CLOUD_SETTINGS = {
+  autoBackupQuotations: true,
+  autoBackupPdfs: true,
+  autoBackupImages: true,
+  autoBackupCustomerData: true,
+  autoBackupCompanyProfiles: true,
+  autoBackupSettings: true,
+  backupFrequency: "every_export", // "every_export" | "hourly" | "daily" | "manual"
+  defaultVisibility: "public", // "public" | "private"
+  allowedEmails: ["client@example.com", "admin@visionx.com"],
+  autoGenerateShareLink: true,
+  copyLinkAfterUpload: true,
+  uploadOriginalPdf: true,
+  compressBeforeUpload: false,
+  deleteLocalAfterUpload: false,
+  encryptMetadata: false,
+  keepPreviousVersions: true,
+  offlineCache: true,
 };
 
 const DEFAULT_COMPANY_PROFILE = {
@@ -541,6 +564,223 @@ export const localDB = {
     }
   },
 
+  // ── ☁️ CLOUD FILES & BACKUP METADATA ENGINE ──
+  getCloudSettings() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CLOUD_SETTINGS);
+      return data ? { ...DEFAULT_CLOUD_SETTINGS, ...JSON.parse(data) } : DEFAULT_CLOUD_SETTINGS;
+    } catch (e) {
+      return DEFAULT_CLOUD_SETTINGS;
+    }
+  },
+
+  saveCloudSettings(settings) {
+    try {
+      const current = this.getCloudSettings();
+      const updated = { ...current, ...settings };
+      localStorage.setItem(STORAGE_KEYS.CLOUD_SETTINGS, JSON.stringify(updated));
+      window.dispatchEvent(new Event("cloudSettingsUpdated"));
+      return updated;
+    } catch (e) {
+      console.error("Error saving cloud settings:", e);
+      return null;
+    }
+  },
+
+  getCloudFiles() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CLOUD_FILES);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.error("Error loading cloud files:", e);
+      return [];
+    }
+  },
+
+  getActiveCloudFiles() {
+    return this.getCloudFiles().filter(f => !f.deleted);
+  },
+
+  getRecentlyDeletedCloudFiles() {
+    return this.getCloudFiles().filter(f => f.deleted);
+  },
+
+  getCloudFileById(id) {
+    if (!id) return null;
+    const files = this.getCloudFiles();
+    return files.find(f => f.id === id || f.driveFileId === id || f.quotationId === id) || null;
+  },
+
+  saveCloudFile(fileData) {
+    try {
+      const files = this.getCloudFiles();
+      const id = fileData.id || `cf_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const settings = this.getCloudSettings();
+      
+      const newFile = {
+        id,
+        quotationId: fileData.quotationId || null,
+        driveFileId: fileData.driveFileId || null,
+        fileName: fileData.fileName || "Quotation.pdf",
+        mimeType: fileData.mimeType || "application/pdf",
+        folderName: fileData.folderName || "VisionX QuoteGen Pro",
+        size: fileData.size || 0,
+        visibility: fileData.visibility || settings.defaultVisibility || "public",
+        shareUrl: fileData.shareUrl || null,
+        createdAt: fileData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deleted: Boolean(fileData.deleted),
+        deletedAt: fileData.deletedAt || null,
+        ownerEmail: fileData.ownerEmail || localStorage.getItem("gdrive_user_email") || "user@visionx.com",
+        allowedEmails: fileData.allowedEmails || [...settings.allowedEmails],
+        viewCount: fileData.viewCount || 0,
+        lastOpenedAt: fileData.lastOpenedAt || null,
+        customerName: fileData.customerName || fileData.clientName || "",
+        companyName: fileData.companyName || "",
+        quotationNumber: fileData.quotationNumber || fileData.refNo || "",
+        shareHistory: fileData.shareHistory || [
+          { action: "Created & Uploaded", timestamp: new Date().toISOString() }
+        ],
+      };
+
+      const existingIdx = files.findIndex(f => f.id === id || (f.driveFileId && f.driveFileId === newFile.driveFileId));
+      if (existingIdx >= 0) {
+        files[existingIdx] = { ...files[existingIdx], ...newFile, updatedAt: new Date().toISOString() };
+      } else {
+        files.unshift(newFile);
+      }
+
+      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(files));
+      this.logCloudSyncEvent({
+        action: existingIdx >= 0 ? "Renamed" : "Uploaded",
+        fileName: newFile.fileName,
+        details: `File ${newFile.fileName} (${newFile.visibility}) synced to local metadata database.`
+      });
+      window.dispatchEvent(new Event("cloudFilesUpdated"));
+      return newFile;
+    } catch (e) {
+      console.error("Error saving cloud file:", e);
+      return null;
+    }
+  },
+
+  updateCloudFile(id, updates) {
+    const file = this.getCloudFileById(id);
+    if (!file) return null;
+    return this.saveCloudFile({ ...file, ...updates, updatedAt: new Date().toISOString() });
+  },
+
+  softDeleteCloudFile(id) {
+    const file = this.getCloudFileById(id);
+    if (!file) return false;
+    
+    const updatedHistory = [...(file.shareHistory || []), { action: "Moved to Recently Deleted", timestamp: new Date().toISOString() }];
+    this.saveCloudFile({
+      ...file,
+      deleted: true,
+      deletedAt: new Date().toISOString(),
+      shareHistory: updatedHistory,
+    });
+
+    this.logCloudSyncEvent({
+      action: "Deleted",
+      fileName: file.fileName,
+      details: `Moved ${file.fileName} to Recently Deleted.`
+    });
+    return true;
+  },
+
+  restoreCloudFile(id) {
+    const file = this.getCloudFileById(id);
+    if (!file) return false;
+
+    const updatedHistory = [...(file.shareHistory || []), { action: "Restored from Recently Deleted", timestamp: new Date().toISOString() }];
+    this.saveCloudFile({
+      ...file,
+      deleted: false,
+      deletedAt: null,
+      shareHistory: updatedHistory,
+    });
+
+    this.logCloudSyncEvent({
+      action: "Restored",
+      fileName: file.fileName,
+      details: `Restored ${file.fileName} to active files.`
+    });
+    return true;
+  },
+
+  permanentDeleteCloudFile(id) {
+    try {
+      const files = this.getCloudFiles();
+      const target = files.find(f => f.id === id);
+      const filtered = files.filter(f => f.id !== id);
+      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(filtered));
+
+      if (target) {
+        this.logCloudSyncEvent({
+          action: "Deleted",
+          fileName: target.fileName,
+          details: `Permanently deleted ${target.fileName}.`
+        });
+      }
+      window.dispatchEvent(new Event("cloudFilesUpdated"));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  bulkSoftDeleteCloudFiles(ids = []) {
+    ids.forEach(id => this.softDeleteCloudFile(id));
+  },
+
+  bulkRestoreCloudFiles(ids = []) {
+    ids.forEach(id => this.restoreCloudFile(id));
+  },
+
+  bulkPermanentDeleteCloudFiles(ids = []) {
+    ids.forEach(id => this.permanentDeleteCloudFile(id));
+  },
+
+  incrementFileViewCount(id) {
+    const file = this.getCloudFileById(id);
+    if (!file) return;
+    const viewCount = (file.viewCount || 0) + 1;
+    const lastOpenedAt = new Date().toISOString();
+    const updatedHistory = [...(file.shareHistory || []), { action: "Opened & Viewed", timestamp: lastOpenedAt }];
+    this.saveCloudFile({ ...file, viewCount, lastOpenedAt, shareHistory: updatedHistory });
+  },
+
+  // ── 📜 CLOUD SYNC LOGS ──
+  getCloudSyncLogs() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SYNC_LOGS);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  logCloudSyncEvent({ action, fileName, details }) {
+    try {
+      const logs = this.getCloudSyncLogs();
+      const newLog = {
+        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        action, // "Uploaded" | "Deleted" | "Restored" | "Renamed" | "Permission Changed"
+        fileName: fileName || "Quotation File",
+        timestamp: new Date().toISOString(),
+        details: details || `Operation ${action} executed.`,
+      };
+      logs.unshift(newLog);
+      // Keep last 100 log entries
+      localStorage.setItem(STORAGE_KEYS.SYNC_LOGS, JSON.stringify(logs.slice(0, 100)));
+      window.dispatchEvent(new Event("cloudLogsUpdated"));
+    } catch (e) {
+      console.error("Error logging sync event:", e);
+    }
+  },
+
   // ── 🧹 CLEAR ALL LOCAL DATA ──
   clearAllData() {
     localStorage.removeItem(STORAGE_KEYS.QUOTATIONS);
@@ -549,6 +789,8 @@ export const localDB = {
     localStorage.removeItem(STORAGE_KEYS.SETTINGS);
     localStorage.removeItem(STORAGE_KEYS.REF_SEQ);
     localStorage.removeItem(STORAGE_KEYS.REF_DATE);
+    localStorage.removeItem(STORAGE_KEYS.CLOUD_FILES);
+    localStorage.removeItem(STORAGE_KEYS.SYNC_LOGS);
     window.dispatchEvent(new Event("quotationDataUpdated"));
   }
 };

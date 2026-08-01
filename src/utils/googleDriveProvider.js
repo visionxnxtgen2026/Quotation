@@ -34,6 +34,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     this.tokenExpiry = Number(localStorage.getItem("gdrive_token_expiry")) || 0;
     this.userEmail = localStorage.getItem("gdrive_user_email") || "";
     this.userName = localStorage.getItem("gdrive_user_name") || "";
+    this.userPicture = localStorage.getItem("gdrive_user_picture") || "";
     this.lastSync = localStorage.getItem("gdrive_last_sync_time") || null;
     this.autoSyncSetting = localStorage.getItem("gdrive_auto_sync_setting") || "every_save";
   }
@@ -53,24 +54,28 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     this.tokenExpiry = 0;
     this.userEmail = "";
     this.userName = "";
+    this.userPicture = "";
     localStorage.removeItem("gdrive_access_token");
     localStorage.removeItem("gdrive_token_expiry");
     localStorage.removeItem("gdrive_user_email");
     localStorage.removeItem("gdrive_user_name");
+    localStorage.removeItem("gdrive_user_picture");
     localStorage.removeItem("gdrive_connected");
     window.dispatchEvent(new Event("gdriveStatusUpdated"));
   }
 
-  saveToken(token, expiresInSeconds = 3600, email = "", name = "") {
+  saveToken(token, expiresInSeconds = 3600, email = "", name = "", picture = "") {
     this.accessToken = token;
     this.tokenExpiry = Date.now() + expiresInSeconds * 1000;
     if (email) this.userEmail = email;
     if (name) this.userName = name;
+    if (picture) this.userPicture = picture;
 
     localStorage.setItem("gdrive_access_token", token);
     localStorage.setItem("gdrive_token_expiry", String(this.tokenExpiry));
     if (email) localStorage.setItem("gdrive_user_email", email);
     if (name) localStorage.setItem("gdrive_user_name", name);
+    if (picture) localStorage.setItem("gdrive_user_picture", picture);
     localStorage.setItem("gdrive_connected", "true");
     window.dispatchEvent(new Event("gdriveStatusUpdated"));
   }
@@ -117,6 +122,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
               // Fetch user info (email & name)
               let userEmail = "";
               let userName = "";
+              let userPicture = "";
               try {
                 const infoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
                   headers: { Authorization: `Bearer ${token}` }
@@ -125,13 +131,14 @@ export class GoogleDriveProvider extends BaseStorageProvider {
                   const info = await infoRes.json();
                   userEmail = info.email || "";
                   userName = info.name || "";
+                  userPicture = info.picture || "";
                   console.log("[GoogleDrive OAuth Success] Connected User:", userEmail);
                 }
               } catch (e) {
                 console.warn("[GoogleDrive] Userinfo fetch notice:", e);
               }
 
-              this.saveToken(token, response.expires_in || 3600, userEmail, userName);
+              this.saveToken(token, response.expires_in || 3600, userEmail, userName, userPicture);
               
               // Automatically trigger Auto-Restore on initial connection
               try {
@@ -337,9 +344,141 @@ export class GoogleDriveProvider extends BaseStorageProvider {
   }
 
   /** Uploads PDF Blob into PDFs folder */
-  async uploadPdf({ fileName, pdfBlob }) {
+  async uploadPdf({ fileName, pdfBlob, visibility = null, allowedEmails = [], quotationId = null, customerName = "", refNo = "" }) {
     const folders = await this.getFolderStructure();
-    return this.upsertFile(folders.pdfsId, fileName, pdfBlob, "application/pdf");
+    const settings = localDB.getCloudSettings();
+    const vis = visibility || settings.defaultVisibility || "public";
+    const emails = Array.isArray(allowedEmails) && allowedEmails.length > 0 ? allowedEmails : (settings.allowedEmails || []);
+
+    const result = await this.upsertFile(folders.pdfsId, fileName, pdfBlob, "application/pdf");
+    
+    // Set Drive file visibility / permissions
+    if (result.fileId) {
+      await this.setFileVisibility(result.fileId, vis, emails).catch(err => {
+        console.warn("[GoogleDrive Permission Notice]:", err);
+      });
+    }
+
+    // Save CloudFiles local metadata record
+    const blobSize = pdfBlob instanceof Blob ? pdfBlob.size : typeof pdfBlob === "string" ? Math.round(pdfBlob.length * 0.75) : 0;
+    localDB.saveCloudFile({
+      driveFileId: result.fileId,
+      quotationId: quotationId || null,
+      fileName,
+      mimeType: "application/pdf",
+      folderName: "PDFs",
+      size: blobSize,
+      visibility: vis,
+      shareUrl: result.driveUrl,
+      ownerEmail: this.userEmail || localStorage.getItem("gdrive_user_email") || "user@visionx.com",
+      allowedEmails: emails,
+      customerName,
+      quotationNumber: refNo,
+    });
+
+    return result;
+  }
+
+  /** Set file permissions: public (anyone reader) vs private (specific allowed emails) */
+  async setFileVisibility(fileId, visibility = "public", allowedEmails = []) {
+    const token = await this.authenticate();
+    if (visibility === "public") {
+      try {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "reader",
+            type: "anyone",
+          }),
+        });
+      } catch (e) {
+        console.warn("[GoogleDrive] Public permission notice:", e);
+      }
+    } else if (visibility === "private" && Array.isArray(allowedEmails) && allowedEmails.length > 0) {
+      for (const email of allowedEmails) {
+        if (!email || !email.includes("@")) continue;
+        try {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              role: "reader",
+              type: "user",
+              emailAddress: email.trim(),
+            }),
+          });
+        } catch (e) {
+          console.warn(`[GoogleDrive] Permission notice for ${email}:`, e);
+        }
+      }
+    }
+  }
+
+  /** Move file to trash on Google Drive */
+  async deleteDriveFile(fileId) {
+    if (!fileId) return false;
+    const token = await this.authenticate();
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trashed: true }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("[GoogleDrive Delete File Notice]:", e);
+      return false;
+    }
+  }
+
+  /** Restore file from trash on Google Drive */
+  async restoreDriveFile(fileId) {
+    if (!fileId) return false;
+    const token = await this.authenticate();
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trashed: false }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("[GoogleDrive Restore File Notice]:", e);
+      return false;
+    }
+  }
+
+  /** Rename file on Google Drive */
+  async renameDriveFile(fileId, newName) {
+    if (!fileId || !newName) return false;
+    const token = await this.authenticate();
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: newName }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("[GoogleDrive Rename File Notice]:", e);
+      return false;
+    }
   }
 
   /** Uploads single Quotation JSON into Quotations folder */
