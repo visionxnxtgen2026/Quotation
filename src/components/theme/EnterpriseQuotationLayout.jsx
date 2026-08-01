@@ -164,7 +164,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
       {/* 👥 2. PREPARED FOR & PROJECT SUMMARY (SYMMETRIC TWO-COLUMN CARDS) */}
       {(hasClientSection || hasProjectSection) && (
-        <div className="grid grid-cols-2 gap-6 mb-6 items-stretch">
+        <div className="pdf-section-block grid grid-cols-2 gap-6 mb-6 items-stretch">
           {/* Prepared For Card */}
           <div className="flex-1 bg-slate-50/90 border border-slate-200/90 rounded-xl p-5 flex flex-col justify-start box-border shadow-2xs">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2.5 pb-1 border-b border-slate-200/80">
@@ -220,7 +220,7 @@ export default function EnterpriseQuotationLayout({ data }) {
             const secEstimatedAmount = workingAreaNum > 0 ? (workingAreaNum * secRatePerSqft) : secRatePerSqft;
 
             return (
-              <div key={sec.id || secIdx} className="border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
+              <div key={sec.id || secIdx} className="pdf-section-block pdf-category-block border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
                 {/* Category Header */}
                 <div className="bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wide px-4 py-2.5 flex items-center justify-between">
                   <span>{sec.title || `Category #${secIdx + 1}`}</span>
@@ -286,7 +286,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
       {/* 💰 4. FINANCIAL PRICING SUMMARY PANEL */}
       {hasGrandTotal && (
-        <div className="flex justify-end mb-6 break-inside-avoid print:break-inside-avoid">
+        <div className="pdf-section-block flex justify-end mb-6 break-inside-avoid print:break-inside-avoid">
           <div className="w-80 border border-slate-300 rounded-xl overflow-hidden bg-slate-50/50 shadow-2xs">
             <div className="p-4 space-y-2.5 border-b border-slate-200 text-xs font-medium">
               {hasSubtotal && (
@@ -337,7 +337,7 @@ export default function EnterpriseQuotationLayout({ data }) {
         <div className="space-y-5 mb-6">
           {/* Scope of Work */}
           {hasScope && (
-            <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
+            <div className="pdf-section-block border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
               <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] mb-2 pb-1 border-b border-slate-100">
                 Scope of Work
               </h4>
@@ -349,7 +349,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
           {/* Payment & Bank Transfer Details */}
           {hasBankDetails && (
-            <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/80 shadow-2xs break-inside-avoid">
+            <div className="pdf-section-block border border-slate-200 rounded-xl p-5 bg-slate-50/80 shadow-2xs break-inside-avoid">
               <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] mb-2.5 pb-1 border-b border-slate-200">
                 Payment Details &amp; Bank Transfer Info
               </h4>
@@ -378,7 +378,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
           {/* Terms & Conditions */}
           {hasTerms && (
-            <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
+            <div className="pdf-section-block border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
               <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] mb-2 pb-1 border-b border-slate-100">
                 Terms &amp; Conditions
               </h4>
@@ -394,7 +394,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
           {/* Exclusions */}
           {hasExclusions && (
-            <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
+            <div className="pdf-section-block border border-slate-200 rounded-xl p-5 bg-white shadow-2xs">
               <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] mb-2 pb-1 border-b border-slate-100">
                 Excluded Items &amp; Services
               </h4>
@@ -406,7 +406,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
           {/* Notes */}
           {hasNotes && (
-            <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-5">
+            <div className="pdf-section-block border border-amber-200 bg-amber-50/60 rounded-xl p-5">
               <h4 className="font-extrabold text-amber-900 uppercase tracking-wider text-[11px] mb-1">
                 Important Notes
               </h4>
@@ -419,7 +419,7 @@ export default function EnterpriseQuotationLayout({ data }) {
       )}
 
       {/* ✍️ 6. AUTHORIZED SIGNATURE & FOOTER */}
-      <div className="pt-6 mt-6 border-t-2 border-slate-900 flex justify-between items-end break-inside-avoid print:break-inside-avoid">
+      <div className="pdf-section-block pt-6 mt-6 border-t-2 border-slate-900 flex justify-between items-end break-inside-avoid print:break-inside-avoid">
         {/* Left Side Note & Website */}
         <div className="text-[11px] text-slate-500 font-medium space-y-1 flex-1 pr-6 text-left">
           <p className="font-black text-slate-900 text-xs">Thank you for your business!</p>

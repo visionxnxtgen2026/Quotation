@@ -42,3 +42,37 @@ input, textarea, select {
 .allow-pinch-zoom {
   touch-action: pan-x pan-y pinch-zoom !important;
 }
+
+/* 🏛️ Enterprise Print & PDF Page Break Rules */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 14mm 10mm;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background-color: #ffffff !important;
+  }
+
+  .pdf-section-block,
+  .pdf-category-block,
+  .page-break-inside-avoid,
+  tr,
+  .rounded-xl,
+  .rounded-2xl,
+  .rounded-3xl {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+}

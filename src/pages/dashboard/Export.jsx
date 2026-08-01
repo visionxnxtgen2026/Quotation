@@ -103,67 +103,16 @@ export default function Export({
     return () => { if (unbind && unbind.remove) unbind.remove(); };
   }, [pdfFilename]);
 
-  // 📄 HTML Canvas + jsPDF Multi-Page Generator
+  // 📄 Enterprise-Grade Multi-Page PDF Generator with Header/Footer & Section Breaking
   const generatePdfBase64 = async () => {
-    console.log("[PDF] Generating PDF...");
+    console.log("[PDF] Generating Enterprise Multi-Page PDF...");
     const element = pdfContainerRef.current || document.getElementById("quotation-pdf-container");
     if (!element) {
       console.error("[PDF] Error: PDF container element not found");
       throw new Error("PDF container element not found");
     }
-
-    const originalDisplay = element.style.display;
-    const originalPosition = element.style.position;
-    const originalLeft = element.style.left;
-
-    element.style.display = "block";
-    element.style.position = "fixed";
-    element.style.left = "0px";
-    element.style.top = "0px";
-    element.style.zIndex = "-999";
-
-    try {
-      const html2canvasModule = await import("html2canvas");
-      const html2canvas = html2canvasModule.default || html2canvasModule;
-      const { jsPDF } = await import("jspdf");
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        windowWidth: 794,
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.98);
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = 210; // A4 width mm
-      const pageHeight = 297; // A4 height mm
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position -= pageHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const pdfDataUri = pdf.output("datauristring");
-      const cleanBase64 = pdfDataUri.replace(/^data:application\/pdf;base64,/, "").trim();
-
-      console.log("[PDF] Generation successful");
-      return { cleanBase64, pdf };
-    } finally {
-      element.style.display = originalDisplay;
-      element.style.position = originalPosition;
-      element.style.left = originalLeft;
-    }
+    const { exportEnterprisePDF } = await import("../../utils/pdfExporter.js");
+    return await exportEnterprisePDF(element, pdfFilename, mappedData || {});
   };
 
   // 1. Download PDF Action with Android MediaStore/Filesystem Verification
