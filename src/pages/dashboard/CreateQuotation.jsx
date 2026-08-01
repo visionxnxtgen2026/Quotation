@@ -914,85 +914,83 @@ export default function CreateQuotation({
                 </button>
               </div>
 
-              {/* Compact Loaded Details Summary Box */}
-              {useCompanyDefaultsToggle && (
-                <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-3">
-                      {activeCompanyProfile.companyLogo ? (
-                        <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 overflow-hidden shadow-2xs">
-                          <img src={activeCompanyProfile.companyLogo} alt="Logo" className="w-full h-full object-contain" />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm border border-blue-100">
-                          {activeCompanyProfile.companyName ? activeCompanyProfile.companyName.charAt(0) : "V"}
-                        </div>
-                      )}
-                      <div>
-                        <h5 className="text-xs font-black text-slate-900">{activeCompanyProfile.companyName || "Saved Company Profile"}</h5>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          {activeCompanyProfile.companyPhone ? `Contact: ${activeCompanyProfile.companyPhone}` : "Company Contact Loaded"}
-                          {activeCompanyProfile.companyEmail ? ` • ${activeCompanyProfile.companyEmail}` : ""}
-                        </p>
+              {/* Active Company Workspace Indicator Bar (Always Visible) */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    {activeCompanyProfile.companyLogo ? (
+                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 overflow-hidden shadow-2xs">
+                        <img src={activeCompanyProfile.companyLogo} alt="Logo" className="w-full h-full object-contain" />
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <select
-                        value={selectedCompanyId || activeCompanyProfile.id || ""}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          setSelectedCompanyId(selectedId);
-                          const allProfiles = localDB.getCompanyProfiles();
-                          const selected = allProfiles.find(p => p.id === selectedId);
-                          if (selected) {
-                            setFormData(prev => applyCompanyDefaults(prev, selected));
-                            showToast(`Loaded "${selected.companyName || 'Company'}" profile`, "success");
-                          }
-                        }}
-                        className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 rounded-xl text-xs font-extrabold cursor-pointer outline-none shadow-2xs"
-                        title="Switch company profile for current quotation"
-                      >
-                        {localDB.getCompanyProfiles().map((p) => (
-                          <option key={p.id} value={p.id}>
-                            🏢 {p.companyName || "Unnamed Company"} {p.isDefault ? "⭐ (Default)" : ""}
-                          </option>
-                        ))}
-                      </select>
-
-                      {goToSettings && (
-                        <button
-                          type="button"
-                          onClick={goToSettings}
-                          className="px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-600 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-                        >
-                          <Settings size={13} />
-                          <span>Edit Settings</span>
-                        </button>
-                      )}
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm border border-blue-100">
+                        {activeCompanyProfile.companyName ? activeCompanyProfile.companyName.charAt(0) : "V"}
+                      </div>
+                    )}
+                    <div>
+                      <h5 className="text-xs font-black text-slate-900">{activeCompanyProfile.companyName || "Saved Company Profile"}</h5>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {activeCompanyProfile.companyPhone ? `Contact: ${activeCompanyProfile.companyPhone}` : "Company Contact Loaded"}
+                        {activeCompanyProfile.companyEmail ? ` • ${activeCompanyProfile.companyEmail}` : ""}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[11px] font-semibold text-slate-600">
-                    <div className="flex items-center gap-1.5 text-emerald-700">
-                      <Check size={14} className="text-emerald-500 shrink-0" />
-                      <span>Company Profile Loaded</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-700">
-                      <Check size={14} className="text-emerald-500 shrink-0" />
-                      <span>Bank Details Loaded</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-700">
-                      <Check size={14} className="text-emerald-500 shrink-0" />
-                      <span>Default Terms Loaded</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-700">
-                      <Check size={14} className="text-emerald-500 shrink-0" />
-                      <span>Scope &amp; Exclusions</span>
-                    </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={selectedCompanyId || activeCompanyProfile.id || ""}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        setSelectedCompanyId(selectedId);
+                        const allProfiles = localDB.getCompanyProfiles();
+                        const selected = allProfiles.find(p => p.id === selectedId);
+                        if (selected) {
+                          setFormData(prev => applyCompanyDefaults(prev, selected));
+                          showToast(`Loaded "${selected.companyName || 'Company'}" profile`, "success");
+                        }
+                      }}
+                      className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 rounded-xl text-xs font-extrabold cursor-pointer outline-none shadow-2xs"
+                      title="Switch company profile for current quotation"
+                    >
+                      {localDB.getCompanyProfiles().map((p) => (
+                        <option key={p.id} value={p.id}>
+                          🏢 {p.companyName || "Unnamed Company"} {p.isDefault ? "⭐ (Default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+
+                    {goToSettings && (
+                      <button
+                        type="button"
+                        onClick={goToSettings}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-600 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Settings size={13} />
+                        <span>Edit Settings</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-              )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[11px] font-semibold text-slate-600">
+                  <div className="flex items-center gap-1.5 text-emerald-700">
+                    <Check size={14} className="text-emerald-500 shrink-0" />
+                    <span>Company Profile Loaded</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-emerald-700">
+                    <Check size={14} className="text-emerald-500 shrink-0" />
+                    <span>Bank Details Loaded</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-emerald-700">
+                    <Check size={14} className="text-emerald-500 shrink-0" />
+                    <span>Default Terms Loaded</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-emerald-700">
+                    <Check size={14} className="text-emerald-500 shrink-0" />
+                    <span>Scope &amp; Exclusions</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 1. Project Details Card (Quotation Specific Fields) */}
@@ -1003,61 +1001,59 @@ export default function CreateQuotation({
               icon={<Building2 size={20} />}
             >
               <div className="space-y-4">
-                {/* Full Editable Company Logo & Details (Shown ONLY if toggle is OFF) */}
-                {!useCompanyDefaultsToggle && (
-                  <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-4 mb-2 animate-in fade-in duration-200">
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="flex items-center gap-3.5 w-full sm:w-auto">
-                        <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden flex items-center justify-center shrink-0 p-1">
-                          {formData.projectDetails.companyLogo ? (
-                            <img src={formData.projectDetails.companyLogo} alt="Logo" className="w-full h-full object-contain" />
-                          ) : (
-                            <ImageIcon size={24} className="text-slate-400" />
-                          )}
-                        </div>
-                        <div>
-                          <h5 className="text-xs font-extrabold text-slate-900">Custom Company Logo</h5>
-                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Appears on top of printable PDF header</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                        <input
-                          type="file"
-                          ref={logoInputRef}
-                          onChange={handleLogoUpload}
-                          accept="image/*"
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => logoInputRef.current?.click()}
-                          className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 transition-all"
-                        >
-                          <Upload size={14} />
-                          <span>{formData.projectDetails.companyLogo ? "Change Logo" : "Upload Logo"}</span>
-                        </button>
-                        {formData.projectDetails.companyLogo && (
-                          <button
-                            type="button"
-                            onClick={handleRemoveLogo}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
-                            title="Remove Logo"
-                          >
-                            <XCircle size={16} />
-                          </button>
+                {/* Full Editable Company Logo & Details (Always Visible & Editable for this Quotation) */}
+                <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-4 mb-2">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                      <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden flex items-center justify-center shrink-0 p-1">
+                        {formData.projectDetails.companyLogo ? (
+                          <img src={formData.projectDetails.companyLogo} alt="Logo" className="w-full h-full object-contain" />
+                        ) : (
+                          <ImageIcon size={24} className="text-slate-400" />
                         )}
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-extrabold text-slate-900">Quotation Company Logo</h5>
+                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Appears on top of printable PDF header</p>
                       </div>
                     </div>
 
-                    <FormInput
-                      label="Company Name"
-                      value={formData.projectDetails.companyName}
-                      onChange={e => handleNestedChange("projectDetails", "companyName", e.target.value)}
-                      placeholder="e.g. VisionX Enterprises"
-                    />
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <input
+                        type="file"
+                        ref={logoInputRef}
+                        onChange={handleLogoUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 transition-all"
+                      >
+                        <Upload size={14} />
+                        <span>{formData.projectDetails.companyLogo ? "Change Logo" : "Upload Logo"}</span>
+                      </button>
+                      {formData.projectDetails.companyLogo && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveLogo}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                          title="Remove Logo"
+                        >
+                          <XCircle size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
+
+                  <FormInput
+                    label="Company Name (For this quotation)"
+                    value={formData.projectDetails.companyName}
+                    onChange={e => handleNestedChange("projectDetails", "companyName", e.target.value)}
+                    placeholder="e.g. VisionX Enterprises"
+                  />
+                </div>
 
                 {/* Quotation Specific Fields (Always Visible) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
