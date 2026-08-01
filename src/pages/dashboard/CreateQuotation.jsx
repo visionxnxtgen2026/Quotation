@@ -119,34 +119,38 @@ export default function CreateQuotation({
     useCompanyProfileDefaults: true
   };
 
-  const applyCompanyDefaults = (currentForm) => {
-    const profile = localDB.getCompanyProfile();
+  const applyCompanyDefaults = (currentForm, specificProfile = null) => {
+    const profile = specificProfile || localDB.getCompanyProfile();
     if (!profile) return { ...currentForm, useCompanyProfileDefaults: true };
     return {
       ...currentForm,
       useCompanyProfileDefaults: true,
       projectDetails: {
         ...currentForm.projectDetails,
-        companyLogo: profile.companyLogo || currentForm.projectDetails?.companyLogo || "",
-        companyName: profile.companyName || currentForm.projectDetails?.companyName || "",
-        companyTagline: profile.companyTagline || currentForm.projectDetails?.companyTagline || "",
-        companyAddress: profile.companyAddress || currentForm.projectDetails?.companyAddress || "",
-        companyPhone: profile.companyPhone || currentForm.projectDetails?.companyPhone || "",
-        companyEmail: profile.companyEmail || currentForm.projectDetails?.companyEmail || "",
-        gstNo: profile.gstNo || currentForm.projectDetails?.gstNo || "",
-        website: profile.website || currentForm.projectDetails?.website || "",
+        companyLogo: profile.companyLogo || "",
+        companyName: profile.companyName || "",
+        companyTagline: profile.companyTagline || profile.tagline || "",
+        companyAddress: profile.companyAddress || profile.address || "",
+        companyPhone: profile.companyPhone || profile.phone || "",
+        companyEmail: profile.companyEmail || profile.email || "",
+        gstNo: profile.gstNo || "",
+        website: profile.website || "",
         paintBrand: profile.defaultPaintBrand || currentForm.projectDetails?.paintBrand || "",
+        subject: profile.coverLetterSubject || currentForm.projectDetails?.subject || "",
       },
       pricing: {
         ...currentForm.pricing,
+        discount: profile.defaultDiscount !== undefined && profile.defaultDiscount !== "" ? profile.defaultDiscount : currentForm.pricing?.discount || "",
         warranty: profile.defaultWarranty || currentForm.pricing?.warranty || ""
       },
       textAreas: {
         ...currentForm.textAreas,
+        coverLetter: profile.coverLetterBody || currentForm.textAreas?.coverLetter || "",
         termsConditions: profile.defaultTerms || currentForm.textAreas?.termsConditions || "",
         scopeOfWork: profile.defaultNotes || profile.defaultScope || currentForm.textAreas?.scopeOfWork || "",
         exclusions: profile.defaultExclusions || currentForm.textAreas?.exclusions || "",
       },
+      validity: profile.defaultValidity || currentForm.validity || "",
       bankDetails: {
         bankName: profile.bankDetails?.bankName || "",
         accountHolder: profile.bankDetails?.accountHolder || "",
