@@ -25,42 +25,16 @@ export function normalizeQuotationData(rawInput) {
   // Determine whether Company Profile Defaults toggle is enabled (defaults to true)
   const useDefaults = rawInput.useCompanyProfileDefaults !== false;
 
-  // 3. Resolve Company Information (Company Settings takes precedence when useDefaults is true)
-  const companyLogo = (useDefaults && companyProfile.companyLogo)
-    ? companyProfile.companyLogo
-    : (pd.companyLogo || rawInput.companyLogo || companyProfile.companyLogo || "");
-
-  const companyName = (useDefaults && companyProfile.companyName)
-    ? companyProfile.companyName
-    : (pd.companyName || rawInput.companyName || companyProfile.companyName || "");
-
-  const companyTagline = (useDefaults && companyProfile.companyTagline)
-    ? companyProfile.companyTagline
-    : (pd.companyTagline || rawInput.companyTagline || companyProfile.companyTagline || "");
-
-  const companyAddress = (useDefaults && companyProfile.companyAddress)
-    ? companyProfile.companyAddress
-    : (pd.companyAddress || rawInput.companyAddress || companyProfile.companyAddress || "");
-
-  const companyPhone = (useDefaults && companyProfile.companyPhone)
-    ? companyProfile.companyPhone
-    : (pd.companyPhone || rawInput.companyPhone || companyProfile.companyPhone || "");
-
-  const companyAltPhone = (useDefaults && companyProfile.companyAltPhone)
-    ? companyProfile.companyAltPhone
-    : (pd.companyAltPhone || rawInput.companyAltPhone || companyProfile.companyAltPhone || "");
-
-  const companyEmail = (useDefaults && companyProfile.companyEmail)
-    ? companyProfile.companyEmail
-    : (pd.companyEmail || rawInput.companyEmail || companyProfile.companyEmail || "");
-
-  const gstNo = (useDefaults && companyProfile.gstNo)
-    ? companyProfile.gstNo
-    : (pd.gstNo || rawInput.gstNo || companyProfile.gstNo || "");
-
-  const website = (useDefaults && companyProfile.website)
-    ? companyProfile.website
-    : (pd.website || rawInput.website || companyProfile.website || "");
+  // 3. Resolve Company Information (User-entered quotation values override company defaults)
+  const companyLogo = pd.companyLogo !== undefined ? pd.companyLogo : (companyProfile.companyLogo || "");
+  const companyName = pd.companyName !== undefined ? pd.companyName : (companyProfile.companyName || "");
+  const companyTagline = pd.companyTagline !== undefined ? pd.companyTagline : (companyProfile.companyTagline || companyProfile.tagline || "");
+  const companyAddress = pd.companyAddress !== undefined ? pd.companyAddress : (companyProfile.companyAddress || companyProfile.address || "");
+  const companyPhone = pd.companyPhone !== undefined ? pd.companyPhone : (companyProfile.companyPhone || companyProfile.phone || "");
+  const companyAltPhone = pd.companyAltPhone !== undefined ? pd.companyAltPhone : (companyProfile.companyAltPhone || companyProfile.altPhone || "");
+  const companyEmail = pd.companyEmail !== undefined ? pd.companyEmail : (companyProfile.companyEmail || companyProfile.email || "");
+  const gstNo = pd.gstNo !== undefined ? pd.gstNo : (companyProfile.gstNo || "");
+  const website = pd.website !== undefined ? pd.website : (companyProfile.website || "");
 
   // 4. Resolve Client Information (Quotation-Specific)
   const clientName = pd.clientName || rawInput.clientName || "-";
@@ -71,15 +45,13 @@ export function normalizeQuotationData(rawInput) {
 
   // 5. Resolve Project Information & Reference / Dates
   const projectName = pd.projectName || rawInput.projectName || "-";
-  const subject = pd.subject || rawInput.subject || "";
+  const subject = pd.subject !== undefined ? pd.subject : (companyProfile.coverLetterSubject || "");
   const referenceNo = pd.referenceNo || rawInput.quotationNo || rawInput.referenceNo || rawInput._id || "VXQ-2026";
   const quotationNo = referenceNo;
   const date = pd.date || rawInput.date || new Date().toISOString().split("T")[0];
   const expiryDate = pd.expiryDate || rawInput.expiryDate || "";
   const revision = pd.revision || rawInput.revision || "01";
-  const paintBrand = (useDefaults && companyProfile.defaultPaintBrand)
-    ? companyProfile.defaultPaintBrand
-    : (pd.paintBrand || rawInput.paintBrand || companyProfile.defaultPaintBrand || "");
+  const paintBrand = pd.paintBrand !== undefined ? pd.paintBrand : (companyProfile.defaultPaintBrand || "");
   const siteLocation = pd.siteLocation || rawInput.siteLocation || clientAddress || "";
 
   // 6. Format Rate Sections & Items Table
@@ -148,35 +120,33 @@ export function normalizeQuotationData(rawInput) {
   const transportNum = Number(pricing.transport || rawInput.transport || 0);
   const additionalChargesNum = Number(pricing.additionalCharges || rawInput.additionalCharges || 0);
   const grandTotalNum = baseTotalNum - discountAmountNum + taxNum + transportNum + additionalChargesNum;
-  const warrantyStr = (useDefaults && companyProfile.defaultWarranty)
-    ? companyProfile.defaultWarranty
-    : (pricing.warranty || rawInput.warranty || companyProfile.defaultWarranty || "3 Years Warranty");
+  const warrantyStr = pricing.warranty !== undefined ? pricing.warranty : (companyProfile.defaultWarranty || "3 Years Warranty");
 
-  // 8. Text Areas & Terms (Company Settings single source of truth when useDefaults is true)
-  const scopeOfWork = (useDefaults && (companyProfile.defaultNotes || companyProfile.defaultScope))
-    ? (companyProfile.defaultNotes || companyProfile.defaultScope)
-    : (textAreas.scopeOfWork || rawInput.scopeOfWork || companyProfile.defaultNotes || "");
-
-  const exclusions = (useDefaults && companyProfile.defaultExclusions)
-    ? companyProfile.defaultExclusions
-    : (textAreas.exclusions || rawInput.exclusions || companyProfile.defaultExclusions || "");
-
-  const termsConditions = (useDefaults && companyProfile.defaultTerms)
-    ? companyProfile.defaultTerms
-    : (textAreas.termsConditions || rawInput.termsConditions || companyProfile.defaultTerms || "");
+  // 8. Text Areas & Terms (User-entered text overrides defaults; empty string is preserved)
+  const scopeOfWork = textAreas.scopeOfWork !== undefined ? textAreas.scopeOfWork : (companyProfile.defaultNotes || companyProfile.defaultScope || "");
+  const exclusions = textAreas.exclusions !== undefined ? textAreas.exclusions : (companyProfile.defaultExclusions || "");
+  const termsConditions = textAreas.termsConditions !== undefined ? textAreas.termsConditions : (companyProfile.defaultTerms || "");
 
   const termsArray = typeof termsConditions === "string"
     ? termsConditions.split("\n").map(t => t.trim()).filter(Boolean)
     : (Array.isArray(termsConditions) ? termsConditions : []);
 
-  // 9. Bank Details (Company Settings single source of truth when useDefaults is true)
+  // 9. Bank Details (User-entered values override company defaults)
   const profileBank = companyProfile.bankDetails || {};
-  const bankName = (useDefaults && profileBank.bankName) ? profileBank.bankName : (rawBank.bankName || profileBank.bankName || "");
-  const accHolder = (useDefaults && profileBank.accountHolder) ? profileBank.accountHolder : (rawBank.accountHolder || rawBank.accHolder || profileBank.accountHolder || "");
-  const accNo = (useDefaults && profileBank.accountNumber) ? profileBank.accountNumber : (rawBank.accountNumber || rawBank.accNo || profileBank.accountNumber || "");
-  const ifsc = (useDefaults && profileBank.ifscCode) ? profileBank.ifscCode : (rawBank.ifscCode || rawBank.ifsc || profileBank.ifscCode || "");
-  const upi = (useDefaults && profileBank.upiId) ? profileBank.upiId : (rawBank.upi || rawBank.upiId || profileBank.upiId || "");
-  const branch = (useDefaults && profileBank.branch) ? profileBank.branch : (rawBank.branch || profileBank.branch || "");
+  const bankName = rawBank.bankName !== undefined ? rawBank.bankName : (profileBank.bankName || "");
+  const accHolder = (rawBank.accountHolder !== undefined || rawBank.accHolder !== undefined)
+    ? (rawBank.accountHolder ?? rawBank.accHolder)
+    : (profileBank.accountHolder || profileBank.accHolder || "");
+  const accNo = (rawBank.accountNumber !== undefined || rawBank.accNo !== undefined)
+    ? (rawBank.accountNumber ?? rawBank.accNo)
+    : (profileBank.accountNumber || profileBank.accNo || "");
+  const ifsc = (rawBank.ifscCode !== undefined || rawBank.ifsc !== undefined)
+    ? (rawBank.ifscCode ?? rawBank.ifsc)
+    : (profileBank.ifscCode || profileBank.ifsc || "");
+  const upi = (rawBank.upiId !== undefined || rawBank.upi !== undefined)
+    ? (rawBank.upiId ?? rawBank.upi)
+    : (profileBank.upiId || profileBank.upi || "");
+  const branch = rawBank.branch !== undefined ? rawBank.branch : (profileBank.branch || "");
 
   const bankDetails = {
     bankName,
@@ -191,22 +161,11 @@ export function normalizeQuotationData(rawInput) {
     branch,
   };
 
-  // 10. Signature & Signatory Metadata
-  const sigName = (useDefaults && (companyProfile.signature?.name || companyProfile.companyName))
-    ? (companyProfile.signature?.name || companyProfile.companyName)
-    : (rawSig.name || rawSig.signatoryName || companyProfile.companyName || companyName);
-
-  const sigDesignation = (useDefaults && companyProfile.signature?.designation)
-    ? companyProfile.signature.designation
-    : (rawSig.designation || "Authorized Signatory");
-
-  const sigPhone = (useDefaults && companyProfile.signature?.phone)
-    ? companyProfile.signature.phone
-    : (rawSig.phone || companyPhone);
-
-  const sigEmail = (useDefaults && companyProfile.signature?.email)
-    ? companyProfile.signature.email
-    : (rawSig.email || companyEmail);
+  // 10. Signature & Signatory Metadata (User-entered values override company defaults; empty string is preserved)
+  const sigName = rawSig.name !== undefined ? rawSig.name : (companyProfile.signature?.name || companyProfile.companyName || "");
+  const sigDesignation = rawSig.designation !== undefined ? rawSig.designation : (companyProfile.signature?.designation || "");
+  const sigPhone = rawSig.phone !== undefined ? rawSig.phone : (companyProfile.signature?.phone || companyPhone || "");
+  const sigEmail = rawSig.email !== undefined ? rawSig.email : (companyProfile.signature?.email || companyEmail || "");
 
   const signature = {
     name: sigName,
@@ -215,13 +174,11 @@ export function normalizeQuotationData(rawInput) {
     companyName: companyName,
     phone: sigPhone,
     email: sigEmail,
-    signatureImage: companyProfile.signature?.signatureImage || companyProfile.companySignature || rawSig.signatureImage || "",
+    signatureImage: rawSig.signatureImage !== undefined ? rawSig.signatureImage : (companyProfile.signature?.signatureImage || companyProfile.companySignature || ""),
   };
 
   // 11. Validity Clause
-  const validity = (useDefaults && companyProfile.defaultValidity)
-    ? companyProfile.defaultValidity
-    : (rawInput.validity || "The price quoted here will be valid for 30 days from the date of issue.");
+  const validity = rawInput.validity !== undefined ? rawInput.validity : (companyProfile.defaultValidity || "The price quoted here will be valid for 30 days from the date of issue.");
 
   // 12. Complete Consolidated Data Object
   const normalized = {

@@ -378,7 +378,7 @@ export default function CreateQuotation({
     const timer = setTimeout(() => {
       if (!isDraftDiscardedRef.current && hasMeaningfulUserData(formData)) {
         const draftPayload = {
-          ...(useCompanyDefaultsToggle ? applyCompanyDefaults(formData) : formData),
+          ...formData,
           useCompanyProfileDefaults: useCompanyDefaultsToggle,
           savedStep: currentStep,
           updatedAt: new Date().toISOString(),
