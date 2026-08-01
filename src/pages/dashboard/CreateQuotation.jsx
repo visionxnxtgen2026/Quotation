@@ -20,10 +20,9 @@ const STEPS = [
 
 /**
  * 🚀 CreateQuotation — Premium Enterprise-Grade Mobile Quotation Builder
- * Features intelligent Company Profile Defaults toggle:
- * - When ON: Hides duplicate company/bank/terms input fields, showing a sleek summary card with [Edit Company Settings] button.
- * - When OFF: Expands complete editable company details, bank details & terms forms.
- * Preserves 100% of PDF export, preview, calculation, and database persistence logic.
+ * Features intelligent Company Profile Defaults toggle & robust draft lifecycle:
+ * - Discard Draft completely purges draft from all storage locations & memory.
+ * - Prevents auto-save from recreating draft on blank/default initial state.
  */
 export default function CreateQuotation({
   goBack, goToPreview, goToExport, goToDashboard, goToSettings,
@@ -40,6 +39,9 @@ export default function CreateQuotation({
   const [isSaving, setIsSaving] = useState(false);
   const [draftSavedStatus, setDraftSavedStatus] = useState(false);
   const [errors, setErrors] = useState({});
+
+  // Flag to track explicit draft discard in current session
+  const isDraftDiscardedRef = useRef(false);
 
   // Input Field References for Programmatic Focus Navigation
   const clientNameRef = useRef(null);
@@ -205,26 +207,35 @@ export default function CreateQuotation({
     };
   };
 
+  /**
+   * Evaluates whether quotation data contains genuine user-entered progress.
+   * Returns false for untouched/blank default initial state.
+   */
   const hasMeaningfulUserData = (data) => {
     if (!data) return false;
+
     const clientName = data.projectDetails?.clientName?.trim() || "";
     const projectName = data.projectDetails?.projectName?.trim() || "";
     const clientEmail = data.projectDetails?.clientEmail?.trim() || "";
+    const clientPhone = data.projectDetails?.clientPhone?.trim() || "";
     const clientAddress = data.projectDetails?.clientAddress?.trim() || "";
-    const scopeOfWork = data.textAreas?.scopeOfWork?.trim() || "";
 
-    if (clientName || projectName || clientEmail || clientAddress || scopeOfWork) {
+    // A genuine user draft MUST have explicit user-entered client/project details
+    if (clientName || projectName || clientEmail || clientPhone || clientAddress) {
       return true;
     }
 
+    // Or user added custom rate sections or modified work items
     const rateSections = data.rateSections || [];
+    if (rateSections.length > 3) return true;
+
     for (const sec of rateSections) {
       for (const row of sec.rows || []) {
         const work = row.work?.trim() || "";
         const labour = Number(row.labour) || 0;
         const material = Number(row.material) || 0;
 
-        if (work && work !== "Surface Preparation, Wall Putty (3 Coats)" && work !== "Primer (1 Coat)") {
+        if (work && work !== "Surface Preparation, Wall Putty (3 Coats)" && work !== "Primer (1 Coat)" && work !== "Satin Enamel Application (2 Coats)" && work !== "Exterior Weatherproof Emulsion (2 Coats)") {
           return true;
         }
         if (work === "Surface Preparation, Wall Putty (3 Coats)" && (labour !== 5 || material !== 3)) {
@@ -335,10 +346,14 @@ export default function CreateQuotation({
           setShowDraftModal(true);
         } else {
           localStorage.removeItem("previewDraft");
+          localStorage.removeItem("quotegen_draft");
+          localStorage.removeItem("draft");
         }
       } catch (e) {
         console.error("Error reading saved draft:", e);
         localStorage.removeItem("previewDraft");
+        localStorage.removeItem("quotegen_draft");
+        localStorage.removeItem("draft");
       }
     }
   }, [quotationId]);
@@ -349,7 +364,7 @@ export default function CreateQuotation({
     if (!isAutoSaveEnabled) return;
 
     const timer = setTimeout(() => {
-      if (hasMeaningfulUserData(formData)) {
+      if (!isDraftDiscardedRef.current && hasMeaningfulUserData(formData)) {
         const draftPayload = {
           ...(useCompanyDefaultsToggle ? applyCompanyDefaults(formData) : formData),
           useCompanyProfileDefaults: useCompanyDefaultsToggle,
@@ -362,6 +377,8 @@ export default function CreateQuotation({
         setTimeout(() => setDraftSavedStatus(false), 2500);
       } else {
         localStorage.removeItem("previewDraft");
+        localStorage.removeItem("quotegen_draft");
+        localStorage.removeItem("draft");
         window.dispatchEvent(new Event("quotationDataUpdated"));
       }
     }, 500);
@@ -370,6 +387,7 @@ export default function CreateQuotation({
   }, [formData, currentStep, useCompanyDefaultsToggle]);
 
   const handleNestedChange = (section, field, value) => {
+    isDraftDiscardedRef.current = false;
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: "" }));
     }
@@ -379,6 +397,36 @@ export default function CreateQuotation({
   const showToast = (message, type = "success") => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: "", type: "" }), 3000);
+  };
+
+  /**
+   * 🧹 PERMANENTLY DISCARD DRAFT HANDLER
+   */
+  const handleDiscardDraft = () => {
+    isDraftDiscardedRef.current = true;
+    
+    // 1. Purge all possible draft storage keys
+    localStorage.removeItem("previewDraft");
+    localStorage.removeItem("quotegen_draft");
+    localStorage.removeItem("draft");
+    sessionStorage.removeItem("previewDraft");
+    sessionStorage.removeItem("quotegen_draft");
+
+    // 2. Clear in-memory draft state
+    setPendingDraft(null);
+    setShowDraftModal(false);
+
+    // 3. Reset form to fresh blank state
+    const fresh = {
+      ...defaultInitialState,
+      projectDetails: {
+        ...defaultInitialState.projectDetails,
+        referenceNo: generateReferenceNo()
+      }
+    };
+    setFormData(applyCompanyDefaults(fresh));
+    window.dispatchEvent(new Event("quotationDataUpdated"));
+    showToast("Draft discarded successfully.", "info");
   };
 
   const handleCompanyDefaultsToggle = (enable) => {
@@ -424,6 +472,7 @@ export default function CreateQuotation({
 
   // Area Calculator Handler
   const handleAreaChange = (field, val) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const updatedArea = { ...prev.areaDetails, [field]: val };
       const interior = Number(field === "interiorArea" ? val : updatedArea.interiorArea) || 0;
@@ -435,6 +484,7 @@ export default function CreateQuotation({
 
   // Rate Table Handlers
   const handleRateChange = (secId, itemId, field, val) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const updated = prev.rateSections.map(sec => {
         if (sec.id !== secId) return sec;
@@ -455,6 +505,7 @@ export default function CreateQuotation({
   };
 
   const addCategorySection = () => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const newSec = {
         id: Date.now(),
@@ -469,6 +520,7 @@ export default function CreateQuotation({
   };
 
   const deleteCategorySection = (secId) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => ({
       ...prev,
       rateSections: prev.rateSections.filter(sec => sec.id !== secId)
@@ -476,6 +528,7 @@ export default function CreateQuotation({
   };
 
   const handleCategoryTitleChange = (secId, titleVal) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => ({
       ...prev,
       rateSections: prev.rateSections.map(sec => sec.id === secId ? { ...sec, title: titleVal } : sec)
@@ -483,6 +536,7 @@ export default function CreateQuotation({
   };
 
   const handleCategoryAreaChange = (secId, areaVal) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => ({
       ...prev,
       rateSections: prev.rateSections.map(sec => sec.id === secId ? { ...sec, workingArea: areaVal } : sec)
@@ -490,6 +544,7 @@ export default function CreateQuotation({
   };
 
   const addRowToSection = (secId) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => ({
       ...prev,
       rateSections: prev.rateSections.map(sec => {
@@ -503,6 +558,7 @@ export default function CreateQuotation({
   };
 
   const deleteRowFromSection = (secId, itemId) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => ({
       ...prev,
       rateSections: prev.rateSections.map(sec => {
@@ -517,6 +573,7 @@ export default function CreateQuotation({
 
   // Payment Terms Dynamic Rows Handlers
   const handlePaymentStageChange = (id, field, val) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const updatedList = (prev.paymentTermsList || []).map(item => {
         if (item.id !== id) return item;
@@ -538,6 +595,7 @@ export default function CreateQuotation({
   };
 
   const addPaymentStage = () => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const currentList = prev.paymentTermsList || [];
       const newStage = { id: Date.now(), stage: `Stage #${currentList.length + 1}`, percent: "0" };
@@ -558,6 +616,7 @@ export default function CreateQuotation({
   };
 
   const deletePaymentStage = (id) => {
+    isDraftDiscardedRef.current = false;
     setFormData(prev => {
       const updatedList = (prev.paymentTermsList || []).filter(item => item.id !== id);
       const newTermsObj = {};
@@ -1385,7 +1444,10 @@ export default function CreateQuotation({
                     label="Validity Clause"
                     rows={3}
                     value={formData.validity}
-                    onChange={e => setFormData(prev => ({ ...prev, validity: e.target.value }))}
+                    onChange={e => {
+                      isDraftDiscardedRef.current = false;
+                      setFormData(prev => ({ ...prev, validity: e.target.value }));
+                    }}
                     placeholder="e.g. The price quoted here will be valid for 30 days from the date of issue."
                   />
                 </FormCard>
@@ -1660,12 +1722,7 @@ export default function CreateQuotation({
             </div>
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => {
-                  localStorage.removeItem("previewDraft");
-                  setFormData(applyCompanyDefaults({ ...defaultInitialState, projectDetails: { ...defaultInitialState.projectDetails, referenceNo: generateReferenceNo() } }));
-                  setShowDraftModal(false);
-                  showToast("Draft discarded.", "success");
-                }}
+                onClick={handleDiscardDraft}
                 className="flex-1 h-12 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer active:bg-slate-50"
               >
                 Discard Draft
@@ -1700,10 +1757,8 @@ export default function CreateQuotation({
               <button onClick={() => setShowResetSheet(false)} className="flex-1 h-12 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer">Cancel</button>
               <button
                 onClick={() => {
-                  localStorage.removeItem("previewDraft");
-                  setFormData(applyCompanyDefaults({ ...defaultInitialState, projectDetails: { ...defaultInitialState.projectDetails, referenceNo: generateReferenceNo() } }));
+                  handleDiscardDraft();
                   setShowResetSheet(false);
-                  showToast("Form reset successfully.", "success");
                 }}
                 className="flex-1 h-12 rounded-xl bg-red-600 text-white font-bold text-xs cursor-pointer"
               >
