@@ -4,8 +4,7 @@ import SettingsCard from "../../components/mobile/SettingsCard";
 import CloudStorageSettingsCard from "../../components/settings/CloudStorageSettingsCard";
 import { MobileInput } from "../../components/mobile/MobileFormCard";
 import DeleteAccountModal from "../../components/settings/DeleteAccountModal";
-import CreateCompanyModal from "../../components/settings/CreateCompanyModal";
-import ManageCompaniesModal from "../../components/settings/ManageCompaniesModal";
+import CompanyProfilesScreen from "../../components/settings/CompanyProfilesScreen";
 import { localDB } from "../../utils/localDB";
 import { triggerAutoSync } from "../../utils/googleDriveProvider";
 import {
@@ -22,9 +21,7 @@ export default function Settings({
   const [autoSaveDraft, setAutoSaveDraft] = useState(() => localStorage.getItem("autoSaveDraftEnabled") !== "false");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [isProfilesScreenOpen, setIsProfilesScreenOpen] = useState(false);
 
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState(null);
@@ -33,6 +30,7 @@ export default function Settings({
     id: "", companyLogo: "", companyName: "", companyTagline: "",
     email: "", phone: "", altPhone: "", website: "", address: "",
     city: "", state: "", pincode: "", country: "India", gstNo: "",
+    coverLetterSubject: "", coverLetterBody: "", defaultDiscount: "", defaultValidity: "",
     defaultWarranty: "", defaultPaintBrand: "", defaultTerms: "", defaultNotes: "", defaultExclusions: "",
     bankName: "", accountHolder: "", accountNumber: "", ifscCode: "", branch: "", upiId: "",
     signatoryName: "", designation: "", signatoryPhone: "", signatoryEmail: "", signatureImage: ""
@@ -63,6 +61,10 @@ export default function Settings({
       pincode: prof.pincode || "",
       country: prof.country || "India",
       gstNo: prof.gstNo || "",
+      coverLetterSubject: prof.coverLetterSubject || "Quotation for Painting Work",
+      coverLetterBody: prof.coverLetterBody || "",
+      defaultDiscount: prof.defaultDiscount !== undefined ? prof.defaultDiscount : "0",
+      defaultValidity: prof.defaultValidity || "30 Days from issue date",
       defaultWarranty: prof.defaultWarranty || "3 Years Warranty",
       defaultPaintBrand: prof.defaultPaintBrand || "",
       defaultTerms: prof.defaultTerms || "",
@@ -87,19 +89,6 @@ export default function Settings({
     window.addEventListener("quotationDataUpdated", refreshProfiles);
     return () => window.removeEventListener("quotationDataUpdated", refreshProfiles);
   }, []);
-
-  const handleSelectCompany = (e) => {
-    const targetId = e.target.value;
-    localDB.setActiveCompanyProfileId(targetId);
-    refreshProfiles();
-  };
-
-  const handleSetCurrentAsDefault = () => {
-    if (activeProfile && activeProfile.id) {
-      localDB.setDefaultCompanyProfile(activeProfile.id);
-      refreshProfiles();
-    }
-  };
 
   const handleChange = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
 
@@ -138,6 +127,10 @@ export default function Settings({
       pincode: form.pincode,
       country: form.country,
       gstNo: form.gstNo,
+      coverLetterSubject: form.coverLetterSubject,
+      coverLetterBody: form.coverLetterBody,
+      defaultDiscount: form.defaultDiscount,
+      defaultValidity: form.defaultValidity,
       defaultWarranty: form.defaultWarranty,
       defaultPaintBrand: form.defaultPaintBrand,
       defaultTerms: form.defaultTerms,
@@ -199,21 +192,16 @@ export default function Settings({
         isLoading={isDeleting}
       />
 
-      <CreateCompanyModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onCreated={() => refreshProfiles()}
-      />
-
-      <ManageCompaniesModal
-        isOpen={isManageModalOpen}
-        onClose={() => setIsManageModalOpen(false)}
-        onOpenCreate={() => setIsCreateModalOpen(true)}
+      {/* Workspace-like Dedicated Company Profiles Screen */}
+      <CompanyProfilesScreen
+        isOpen={isProfilesScreenOpen}
+        onClose={() => setIsProfilesScreenOpen(false)}
+        onSelectProfile={() => refreshProfiles()}
         onProfilesUpdated={() => refreshProfiles()}
       />
 
       <MobileHeader
-        title="Company Settings"
+        title={`${form.companyName || "Company"} Settings`}
         onBack={goToDashboard}
         right={
           <button
@@ -230,64 +218,51 @@ export default function Settings({
 
       <div className="w-full px-4 py-4 space-y-4 max-w-4xl mx-auto">
         
-        {/* 1. Company Profiles Card */}
-        <SettingsCard
-          title="Company Profiles"
-          subtitle="Manage multiple company, brand or franchise profiles"
-          icon={<Building2 size={18} />}
-          iconBg="bg-blue-50 text-blue-600"
+        {/* 🏢 CLEAN COMPANY PROFILES CARD */}
+        <div
+          onClick={() => setIsProfilesScreenOpen(true)}
+          className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_24px_rgba(0,0,0,0.06)] transition-all cursor-pointer group"
         >
-          {/* 🏢 MULTI-COMPANY SELECTOR BAR */}
-          <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 mb-5 space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                Current Active Company:
-                {activeProfile?.isDefault && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
-                    <Star size={10} className="fill-emerald-600 text-emerald-600" /> Default
-                  </span>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                {form.companyLogo ? (
+                  <img src={form.companyLogo} alt="Logo" className="w-full h-full object-contain p-1" />
+                ) : (
+                  <Building2 size={22} />
                 )}
-              </label>
-
-              <div className="flex items-center gap-1.5">
-                {!activeProfile?.isDefault && (
-                  <button
-                    onClick={handleSetCurrentAsDefault}
-                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                    title="Set this profile as the default for new quotations"
-                  >
-                    <Star size={12} /> Set Default
-                  </button>
-                )}
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                >
-                  <Plus size={13} /> Create New
-                </button>
-                <button
-                  onClick={() => setIsManageModalOpen(true)}
-                  className="px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                >
-                  <Settings2 size={13} /> Manage All
-                </button>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base font-black text-slate-900 tracking-tight truncate">
+                    {form.companyName || "My Company"}
+                  </h3>
+                  {activeProfile?.isDefault && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
+                      <Star size={10} className="fill-emerald-600 text-emerald-600" /> Default
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+                  Manage company profiles, branding and quotation defaults ({profiles.length} {profiles.length === 1 ? 'company' : 'companies'})
+                </p>
               </div>
             </div>
 
-            {/* Select Dropdown */}
-            <select
-              value={activeProfile?.id || ""}
-              onChange={handleSelectCompany}
-              className="w-full h-11 px-3.5 bg-white border border-slate-200/90 rounded-xl font-extrabold text-xs text-slate-900 outline-none focus:border-blue-600 shadow-2xs transition-all cursor-pointer"
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.companyName || "Unnamed Company"} {p.isDefault ? "⭐ (Default)" : ""}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1 text-xs font-extrabold text-blue-600 bg-blue-50 px-3 py-2 rounded-xl border border-blue-100/60 shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <span>Switch / Manage</span>
+              <ChevronRight size={16} />
+            </div>
           </div>
+        </div>
 
+        {/* 1. Focused Single Company Details Card */}
+        <SettingsCard
+          title="Company Details"
+          subtitle={`Editing settings for ${form.companyName || "current company"}`}
+          icon={<Building2 size={18} />}
+          iconBg="bg-blue-50 text-blue-600"
+        >
           <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-4">
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
               {form.companyLogo
@@ -373,8 +348,16 @@ export default function Settings({
         {/* 4. Default Text Templates */}
         <SettingsCard title="Default Reusable Templates" subtitle="Pre-fill warranty, scope, exclusions &amp; terms" icon={<FileText size={18} />} iconBg="bg-purple-50 text-purple-600">
           <div className="space-y-3">
-            <MobileInput label="Default Warranty Statement" value={form.defaultWarranty} onChange={e => handleChange("defaultWarranty", e.target.value)} placeholder="12 Years Workmanship Warranty" />
-            <MobileInput label="Default Brand Specification" value={form.defaultPaintBrand} onChange={e => handleChange("defaultPaintBrand", e.target.value)} placeholder="Asian Paints Royale / Berger Silk" />
+            <MobileInput label="Default Cover Letter Subject" value={form.coverLetterSubject} onChange={e => handleChange("coverLetterSubject", e.target.value)} placeholder="Quotation for Painting Work" />
+            <MobileInput label="Default Cover Letter Body" value={form.coverLetterBody} onChange={e => handleChange("coverLetterBody", e.target.value)} rows={3} placeholder="Enter default introduction text..." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <MobileInput label="Default Warranty Statement" value={form.defaultWarranty} onChange={e => handleChange("defaultWarranty", e.target.value)} placeholder="3 Years Warranty" />
+              <MobileInput label="Default Validity Clause" value={form.defaultValidity} onChange={e => handleChange("defaultValidity", e.target.value)} placeholder="30 Days from issue date" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <MobileInput label="Default Brand Specification" value={form.defaultPaintBrand} onChange={e => handleChange("defaultPaintBrand", e.target.value)} placeholder="Asian Paints Royale / Dulux Silk" />
+              <MobileInput label="Default Discount (%)" value={form.defaultDiscount} onChange={e => handleChange("defaultDiscount", e.target.value)} placeholder="0" />
+            </div>
             <MobileInput label="Default Scope of Work" value={form.defaultNotes} onChange={e => handleChange("defaultNotes", e.target.value)} rows={3} />
             <MobileInput label="Default Exclusions" value={form.defaultExclusions} onChange={e => handleChange("defaultExclusions", e.target.value)} rows={3} />
             <MobileInput label="Default Terms &amp; Conditions" value={form.defaultTerms} onChange={e => handleChange("defaultTerms", e.target.value)} rows={4} />
