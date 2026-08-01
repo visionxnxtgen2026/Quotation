@@ -302,6 +302,13 @@ export default function CreateQuotation({
     return applyCompanyDefaults(fresh);
   });
 
+  const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
+    const active = localDB.getActiveCompanyProfile();
+    return active?.id || "";
+  });
+
+  const activeCompanyProfile = localDB.getCompanyProfiles().find(p => p.id === selectedCompanyId) || localDB.getActiveCompanyProfile() || {};
+
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [showResetSheet, setShowResetSheet] = useState(false);
 
@@ -910,33 +917,35 @@ export default function CreateQuotation({
                 <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3 animate-in fade-in duration-150">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
-                      {companyProfile.companyLogo ? (
+                      {activeCompanyProfile.companyLogo ? (
                         <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 overflow-hidden shadow-2xs">
-                          <img src={companyProfile.companyLogo} alt="Logo" className="w-full h-full object-contain" />
+                          <img src={activeCompanyProfile.companyLogo} alt="Logo" className="w-full h-full object-contain" />
                         </div>
                       ) : (
                         <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm border border-blue-100">
-                          {companyProfile.companyName ? companyProfile.companyName.charAt(0) : "V"}
+                          {activeCompanyProfile.companyName ? activeCompanyProfile.companyName.charAt(0) : "V"}
                         </div>
                       )}
                       <div>
-                        <h5 className="text-xs font-black text-slate-900">{companyProfile.companyName || "Saved Company Profile"}</h5>
+                        <h5 className="text-xs font-black text-slate-900">{activeCompanyProfile.companyName || "Saved Company Profile"}</h5>
                         <p className="text-[11px] text-slate-500 font-medium">
-                          {companyProfile.companyPhone ? `Contact: ${companyProfile.companyPhone}` : "Company Contact Loaded"}
-                          {companyProfile.companyEmail ? ` • ${companyProfile.companyEmail}` : ""}
+                          {activeCompanyProfile.companyPhone ? `Contact: ${activeCompanyProfile.companyPhone}` : "Company Contact Loaded"}
+                          {activeCompanyProfile.companyEmail ? ` • ${activeCompanyProfile.companyEmail}` : ""}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
                       <select
-                        value={companyProfile?.id || ""}
+                        value={selectedCompanyId || activeCompanyProfile.id || ""}
                         onChange={(e) => {
                           const selectedId = e.target.value;
+                          setSelectedCompanyId(selectedId);
                           const allProfiles = localDB.getCompanyProfiles();
                           const selected = allProfiles.find(p => p.id === selectedId);
                           if (selected) {
-                            setCompanyProfile(selected);
+                            setFormData(prev => applyCompanyDefaults(prev, selected));
+                            showToast(`Loaded "${selected.companyName || 'Company'}" profile`, "success");
                           }
                         }}
                         className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 rounded-xl text-xs font-extrabold cursor-pointer outline-none shadow-2xs"
