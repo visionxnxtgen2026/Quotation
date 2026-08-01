@@ -444,11 +444,15 @@ export default function CreateQuotation({
   const handleCompanyDefaultsToggle = (enable) => {
     setUseCompanyDefaultsToggle(enable);
     if (enable) {
-      setFormData(prev => applyCompanyDefaults(prev));
-      showToast("Company defaults active", "success");
+      const activeProf = localDB.getCompanyProfiles().find(p => p.id === selectedCompanyId) || localDB.getActiveCompanyProfile();
+      setFormData(prev => applyCompanyDefaults(prev, activeProf));
+      showToast("Workspace template active", "success");
     } else {
-      setFormData(prev => clearCompanyDefaults(prev));
-      showToast("Company defaults disabled - custom entry enabled", "info");
+      setFormData(prev => ({
+        ...prev,
+        useCompanyProfileDefaults: false
+      }));
+      showToast("Standalone quotation mode - workspace data retained", "info");
     }
   };
 
@@ -890,12 +894,10 @@ export default function CreateQuotation({
                   </div>
                   <div>
                     <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 leading-tight">
-                      {useCompanyDefaultsToggle ? "Using Company Profile Defaults" : "Custom Company Details Entry"}
+                      Use Company Workspace Template
                     </h4>
                     <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                      {useCompanyDefaultsToggle
-                        ? "Company logo, bank info & terms are loaded automatically from settings."
-                        : "Toggle ON to load saved company profile defaults automatically."}
+                      Pre-fill this quotation using the selected company's workspace. You can still edit any field without affecting the original workspace.
                     </p>
                   </div>
                 </div>
