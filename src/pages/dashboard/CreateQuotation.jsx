@@ -489,13 +489,29 @@ export default function CreateQuotation({
     setFormData(prev => {
       const updated = prev.rateSections.map(sec => {
         if (sec.id !== secId) return sec;
+        const comps = (sec.components && sec.components.length > 0)
+          ? sec.components
+          : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
+
         const updatedRows = (sec.rows || []).map(r => {
           if (r.id !== itemId) return r;
-          const updatedRow = { ...r, [field]: val };
-          if (field === "labour" || field === "material") {
-            const l = Number(field === "labour" ? val : updatedRow.labour) || 0;
-            const m = Number(field === "material" ? val : updatedRow.material) || 0;
-            updatedRow.total = l + m;
+          
+          const updatedRow = { ...r };
+          if (field === "work" || field === "desc" || field === "description") {
+            updatedRow.work = val;
+          } else {
+            const componentRates = { ...(r.componentRates || {}) };
+            componentRates[field] = val;
+            updatedRow.componentRates = componentRates;
+            updatedRow[field] = val;
+
+            const newTotal = comps.reduce((acc, c) => {
+              const cVal = componentRates[c.id] !== undefined
+                ? Number(componentRates[c.id]) || 0
+                : (c.id === "labour" ? Number(updatedRow.labour || 0) : c.id === "material" ? Number(updatedRow.material || 0) : Number(updatedRow[c.id] || 0));
+              return acc + cVal;
+            }, 0);
+            updatedRow.total = newTotal;
           }
           return updatedRow;
         });
@@ -503,6 +519,14 @@ export default function CreateQuotation({
       });
       return { ...prev, rateSections: updated };
     });
+  };
+
+  const handleCategoryComponentsChange = (secId, updatedComponents) => {
+    isDraftDiscardedRef.current = false;
+    setFormData(prev => ({
+      ...prev,
+      rateSections: prev.rateSections.map(sec => sec.id === secId ? { ...sec, components: updatedComponents } : sec)
+    }));
   };
 
   const addCategorySection = () => {
@@ -636,7 +660,20 @@ export default function CreateQuotation({
   };
 
   const grandTotalAmount = formData.rateSections.reduce((acc, sec) => {
-    const secRate = (sec.rows || []).reduce((rAcc, r) => rAcc + (Number(r.total) || (Number(r.labour || 0) + Number(r.material || 0))), 0);
+    const comps = (sec.components && sec.components.length > 0)
+      ? sec.components
+      : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
+
+    const secRate = (sec.rows || []).reduce((rAcc, r) => {
+      const rTot = comps.reduce((cAcc, c) => {
+        const cVal = r.componentRates?.[c.id] !== undefined
+          ? Number(r.componentRates[c.id]) || 0
+          : (c.id === "labour" ? Number(r.labour || 0) : c.id === "material" ? Number(r.material || 0) : Number(r[c.id] || 0));
+        return cAcc + cVal;
+      }, 0);
+      return rAcc + (Number(r.total) || rTot);
+    }, 0);
+
     const area = Number(sec.workingArea || 0);
     const est = area > 0 ? (area * secRate) : secRate;
     return acc + est;
@@ -1068,56 +1105,9 @@ export default function CreateQuotation({
               </div>
             </FormCard>
 
-            {/* 2. Area Details Card */}
+            {/* 2. Cover Letter Card */}
             <FormCard
               sectionNumber="2"
-              title="Area Details"
-              subtitle="Total interior and exterior floor/wall area measurements"
-              icon={<Calculator size={20} />}
-            >
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormInput
-                    label="Total Interior Area (Sqft)"
-                    type="number"
-                    inputMode="decimal"
-                    value={formData.areaDetails.interiorArea}
-                    onChange={e => handleAreaChange("interiorArea", e.target.value)}
-                    placeholder="e.g. 1200"
-                  />
-
-                  <FormInput
-                    label="Total Exterior Area (Sqft)"
-                    type="number"
-                    inputMode="decimal"
-                    value={formData.areaDetails.exteriorArea}
-                    onChange={e => handleAreaChange("exteriorArea", e.target.value)}
-                    placeholder="e.g. 800"
-                  />
-                </div>
-
-                <div className="p-4 bg-blue-50/70 border border-blue-100 rounded-2xl flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
-                      ∑
-                    </div>
-                    <div>
-                      <h6 className="text-xs font-extrabold text-slate-900">Total Calculated Area</h6>
-                      <p className="text-[11px] text-slate-500 font-medium">Automatic sum of interior + exterior area</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-base font-black text-blue-700">
-                      {formData.areaDetails.totalArea || (Number(formData.areaDetails.interiorArea || 0) + Number(formData.areaDetails.exteriorArea || 0))} Sqft
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </FormCard>
-
-            {/* 3. Cover Letter Card */}
-            <FormCard
-              sectionNumber="3"
               title="Cover Letter"
               subtitle="Personalized intro message for client proposal"
               icon={<FileText size={20} />}
@@ -1140,9 +1130,9 @@ export default function CreateQuotation({
               </div>
             </FormCard>
 
-            {/* 4. Project Timeline Card */}
+            {/* 3. Project Timeline Card */}
             <FormCard
-              sectionNumber="4"
+              sectionNumber="3"
               title="Project Timeline"
               subtitle="Estimated start date and completion schedule"
               icon={<Clock size={20} />}
@@ -1164,10 +1154,10 @@ export default function CreateQuotation({
               </div>
             </FormCard>
 
-            {/* 6. Bank Details Card (Shown ONLY when Toggle is OFF) */}
+            {/* 4. Bank Details Card (Shown ONLY when Toggle is OFF) */}
             {!useCompanyDefaultsToggle && (
               <FormCard
-                sectionNumber="6"
+                sectionNumber="4"
                 title="Bank Details"
                 subtitle="Payment deposit and bank account info"
                 icon={<Landmark size={20} />}
@@ -1241,6 +1231,7 @@ export default function CreateQuotation({
                     onAddItem={addRowToSection}
                     onDeleteItem={deleteRowFromSection}
                     onDeleteSection={deleteCategorySection}
+                    onComponentsChange={handleCategoryComponentsChange}
                     canDeleteSection={formData.rateSections.length > 1}
                   />
                 ))}
