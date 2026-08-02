@@ -1,4 +1,4 @@
-package com.visionx.quotegenpro;
+package com.VisionX.quotegenpro;
 
 import com.getcapacitor.BridgeActivity;
 

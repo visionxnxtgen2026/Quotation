@@ -1,5 +1,7 @@
 import { BaseStorageProvider } from "./storageProvider";
 import { localDB } from "./localDB";
+import { Browser } from "@capacitor/browser";
+import { App } from "@capacitor/app";
 
 /**
  * ☁️ GoogleDriveProvider — Client-Side Google Drive Backup & Sync Engine
@@ -9,22 +11,26 @@ import { localDB } from "./localDB";
  * No private server storage is used.
  */
 
-const DEFAULT_CLIENT_ID = "282167349922-86tv666uiaglf6mlqp3dq53nrgagrhqs.apps.googleusercontent.com";
+const WEB_CLIENT_ID = "282167349922-86tv666uiaglf6mlqp3dq53nrgagrhqs.apps.googleusercontent.com";
+const ANDROID_CLIENT_ID = "282167349922-3fi0sjaripsms762kglgvf1t1b83ou3g.apps.googleusercontent.com";
 const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
-const getClientId = () => {
-  const clientId = (
+const getClientId = (isNative = false) => {
+  if (isNative) {
+    return (
+      import.meta.env?.VITE_GOOGLE_ANDROID_CLIENT_ID ||
+      window.ENV_GOOGLE_ANDROID_CLIENT_ID ||
+      localStorage.getItem("gdrive_android_client_id") ||
+      ANDROID_CLIENT_ID
+    )?.trim();
+  }
+
+  return (
     import.meta.env?.VITE_GOOGLE_CLIENT_ID ||
     window.ENV_GOOGLE_CLIENT_ID ||
     localStorage.getItem("gdrive_custom_client_id") ||
-    DEFAULT_CLIENT_ID
+    WEB_CLIENT_ID
   )?.trim();
-
-  if (!clientId || clientId.includes("demo")) {
-    console.error("[GoogleDrive OAuth Error] Invalid or missing Google Client ID. Check VITE_GOOGLE_CLIENT_ID in .env");
-  }
-
-  return clientId;
 };
 
 export class GoogleDriveProvider extends BaseStorageProvider {
@@ -36,7 +42,8 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     this.userName = localStorage.getItem("gdrive_user_name") || "";
     this.userPicture = localStorage.getItem("gdrive_user_picture") || "";
     this.lastSync = localStorage.getItem("gdrive_last_sync_time") || null;
-    this.autoSyncSetting = localStorage.getItem("gdrive_auto_sync_setting") || "every_save";
+    this.deviceId = localStorage.getItem("gdrive_device_id") || `Device_${Math.random().toString(36).substring(2, 8)}`;
+    localStorage.setItem("gdrive_device_id", this.deviceId);
   }
 
   /** Check if currently authenticated with a valid token */
@@ -80,123 +87,223 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     window.dispatchEvent(new Event("gdriveStatusUpdated"));
   }
 
-  /** Authenticate user via Google Identity Services Token Client */
+  /** Check if running inside Capacitor Android / iOS Native WebView */
+  isNativePlatform() {
+    return (
+      typeof window !== "undefined" &&
+      window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === "function" &&
+      window.Capacitor.isNativePlatform()
+    );
+  }
+
+  /** Main Router method for Platform Authentication */
   async authenticate() {
     if (await this.isConnected()) return this.accessToken;
 
-    const clientId = getClientId();
-    console.log("--------------------------------------------------");
-    console.log("[GoogleDrive OAuth Init] Starting Google OAuth 2.0 Flow...");
-    console.log("[GoogleDrive OAuth Init] Current Origin:", window.location.origin);
-    console.log("[GoogleDrive OAuth Init] Loaded Client ID:", clientId);
-    console.log("--------------------------------------------------");
+    if (this.isNativePlatform()) {
+      return await this.authenticateNative();
+    } else {
+      return await this.authenticateWeb();
+    }
+  }
+
+  /** 🌐 WEB BROWSER: Google Identity Services (GIS) Flow */
+  async authenticateWeb() {
+    const clientId = getClientId(false); // Web Client ID
 
     return new Promise((resolve, reject) => {
-      if (window.google?.accounts?.oauth2) {
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: SCOPES,
-          callback: async (response) => {
-            if (response.error) {
-              console.error("[GoogleDrive OAuth Error Details]:", {
-                clientId,
-                origin: window.location.origin,
-                error: response.error,
-                details: response
-              });
-              const msg = response.error === "popup_closed_by_user"
-                ? "Google OAuth popup closed before completion."
-                : response.error === "access_denied"
-                ? "Permission denied by user."
-                : response.error === "invalid_client"
-                ? `Error 401 (invalid_client): OAuth Client ID (${clientId}) not recognized for origin ${window.location.origin}. Please verify Authorized JavaScript Origins in Google Cloud Console.`
-                : `Google Authentication failed: ${response.error}`;
-              reject(new Error(msg));
-              return;
-            }
-
-            if (response.access_token) {
-              const token = response.access_token;
-              console.log("[GoogleDrive OAuth Success] Access token received successfully!");
-
-              // Fetch user info (email & name)
-              let userEmail = "";
-              let userName = "";
-              let userPicture = "";
-              try {
-                const infoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-                  headers: { Authorization: `Bearer ${token}` }
-                });
-                if (infoRes.ok) {
-                  const info = await infoRes.json();
-                  userEmail = info.email || "";
-                  userName = info.name || "";
-                  userPicture = info.picture || "";
-                  console.log("[GoogleDrive OAuth Success] Connected User:", userEmail);
-                }
-              } catch (e) {
-                console.warn("[GoogleDrive] Userinfo fetch notice:", e);
-              }
-
-              this.saveToken(token, response.expires_in || 3600, userEmail, userName, userPicture);
-              
-              // Automatically trigger Auto-Restore on initial connection
-              try {
-                await this.autoRestore();
-              } catch (restoreErr) {
-                console.warn("[GoogleDrive] Auto-restore notice:", restoreErr);
-              }
-
-              resolve(token);
-            } else {
-              reject(new Error("No access token returned from Google"));
-            }
-          },
-          onerror: (err) => {
-            console.error("[GoogleDrive OAuth Script Error]:", err);
-            reject(err);
-          },
-        });
-        client.requestAccessToken();
-      } else {
-        const manualToken = prompt(
-          "Enter your Google OAuth Access Token (or ensure Google GIS script is enabled):"
-        );
-        if (manualToken && manualToken.trim()) {
-          this.saveToken(manualToken.trim());
-          resolve(manualToken.trim());
-        } else {
-          reject(new Error("Google Identity Services script not loaded. Please check your internet connection."));
-        }
+      if (!window.google?.accounts?.oauth2) {
+        reject(new Error("Google Identity Services SDK (gsi/client) is not loaded in window. Check internet connection."));
+        return;
       }
+
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SCOPES,
+        callback: async (response) => {
+          if (response.error) {
+            const msg = response.error === "popup_closed_by_user"
+              ? "Google OAuth popup closed before completion."
+              : response.error === "access_denied"
+                ? "Permission denied by user."
+                : `Google Authentication failed: ${response.error}`;
+            reject(new Error(msg));
+            return;
+          }
+
+          if (response.access_token) {
+            const token = response.access_token;
+            await this.handleSuccessfulAuthToken(token, response.expires_in || 3600);
+            resolve(token);
+          }
+        },
+      });
+      client.requestAccessToken();
     });
   }
 
+  /** 📱 CAPACITOR NATIVE (Android / iOS): Native Custom Scheme Deep Link OAuth Flow */
+  async authenticateNative() {
+    const clientId = getClientId(true); // Android Client ID: 282167349922-3fi0sjaripsms762kglgvf1t1b83ou3g.apps.googleusercontent.com
 
-  /** Disconnect Google Drive account without deleting files */
-  async disconnect() {
-    if (this.accessToken && window.google?.accounts?.oauth2) {
+    // Custom App Deep Link Scheme URI for Android APK (matches AndroidManifest / appId)
+    const customSchemeUri = "com.visionx.quotegenpro://oauth2redirect";
+
+    const rawRedirectUri = (
+      import.meta.env?.VITE_ANDROID_OAUTH_REDIRECT_URI ||
+      window.ENV_ANDROID_OAUTH_REDIRECT_URI ||
+      localStorage.getItem("gdrive_android_redirect_uri") ||
+      customSchemeUri
+    )?.trim();
+
+    console.log(`[Android OAuth Debug] Native Platform | Client ID: ${clientId} | redirect_uri: "${rawRedirectUri}"`);
+
+    // 1. Check if Capacitor GoogleAuth plugin is available
+    if (window.Capacitor?.Plugins?.GoogleAuth) {
       try {
-        window.google.accounts.oauth2.revoke(this.accessToken, () => {});
-      } catch (e) { }
+        const GoogleAuth = window.Capacitor.Plugins.GoogleAuth;
+        if (typeof GoogleAuth.initialize === "function") {
+          await GoogleAuth.initialize({
+            clientId: clientId,
+            scopes: ["https://www.googleapis.com/auth/drive.file", "profile", "email"],
+            grantOfflineAccess: true,
+          });
+        }
+        const googleUser = await GoogleAuth.signIn();
+        const token = googleUser.authentication?.accessToken || googleUser.accessToken;
+        if (token) {
+          await this.handleSuccessfulAuthToken(token, 3600, googleUser.email, googleUser.givenName || googleUser.name, googleUser.imageUrl);
+          return token;
+        }
+      } catch (err) {
+        console.warn("[Capacitor GoogleAuth Plugin Notice]:", err);
+      }
     }
+
+    // 2. Native OAuth Browser Redirect / Deep Link Fallback Flow
+    return new Promise((resolve, reject) => {
+      const redirectUri = rawRedirectUri;
+      console.log(`[Android OAuth Debug] Launching Google OAuth with redirect_uri: "${redirectUri}"`);
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${encodeURIComponent(clientId)}&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `response_type=token&` +
+        `scope=${encodeURIComponent(SCOPES)}&` +
+        `include_granted_scopes=true&` +
+        `prompt=consent`;
+
+      let unbindUrlListener = null;
+
+      const cleanup = () => {
+        if (unbindUrlListener && typeof unbindUrlListener.remove === "function") {
+          unbindUrlListener.remove();
+        }
+        window.removeEventListener("capacitorAppUrlOpen", handleCustomEvent);
+      };
+
+      const handleUrl = async (urlStr) => {
+        if (!urlStr) return;
+        console.log(`[Android OAuth Debug] App Deep Link callback URL received: ${urlStr}`);
+
+        // Automatically close Capacitor Browser window upon callback
+        if (window.Capacitor?.Plugins?.Browser?.close) {
+          try {
+            await window.Capacitor.Plugins.Browser.close();
+          } catch (e) {}
+        }
+
+        if (urlStr.includes("access_token=") || urlStr.includes("code=")) {
+          cleanup();
+          try {
+            const queryString = urlStr.includes("#") ? urlStr.split("#")[1] : urlStr.split("?")[1] || "";
+            const params = new URLSearchParams(queryString);
+            const token = params.get("access_token");
+            const expiresIn = Number(params.get("expires_in")) || 3600;
+
+            if (token) {
+              await this.handleSuccessfulAuthToken(token, expiresIn);
+              resolve(token);
+              return;
+            }
+          } catch (e) {
+            reject(new Error(`Failed to parse native OAuth response: ${e.message}`));
+          }
+        }
+      };
+
+      const handleCustomEvent = (e) => {
+        if (e.detail) handleUrl(e.detail);
+      };
+
+      window.addEventListener("capacitorAppUrlOpen", handleCustomEvent);
+
+      if (window.Capacitor?.Plugins?.App?.addListener) {
+        window.Capacitor.Plugins.App.addListener("appUrlOpen", (data) => {
+          handleUrl(data.url);
+        }).then(listener => {
+          unbindUrlListener = listener;
+        });
+      }
+
+      if (window.Capacitor?.Plugins?.Browser?.open) {
+        window.Capacitor.Plugins.Browser.open({ url: authUrl });
+      } else {
+        window.location.href = authUrl;
+      }
+
+      setTimeout(() => {
+        cleanup();
+        reject(new Error(`Native Google Authentication timed out. Register "${redirectUri}" in Google Cloud Console and ensure Android custom URL scheme is configured.`));
+      }, 120000);
+    });
+  }
+
+  /** Helper to store user info & setup Google Drive folders */
+  async handleSuccessfulAuthToken(token, expiresIn = 3600, email = "", name = "", picture = "") {
+    try {
+      if (!email) {
+        const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (userRes.ok) {
+          const userInfo = await userRes.json();
+          this.saveToken(token, expiresIn, userInfo.email, userInfo.name, userInfo.picture);
+        } else {
+          this.saveToken(token, expiresIn);
+        }
+      } else {
+        this.saveToken(token, expiresIn, email, name, picture);
+      }
+
+      await this.getFolderStructure().catch(() => {});
+    } catch (err) {
+      this.saveToken(token, expiresIn);
+    }
+  }
+
+  /** Disconnect Google Drive */
+  async disconnect() {
     this.clearToken();
   }
 
-  /** Authorized API fetch wrapper */
+  /** Internal helper for Google Drive API v3 requests */
   async driveApiFetch(url, options = {}) {
     const token = await this.authenticate();
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      ...(options.headers || {}),
-    };
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
 
-    const res = await fetch(url, { ...options, headers });
-    if (res.status === 401) {
-      this.clearToken();
-      throw new Error("Google Drive authorization expired. Please reconnect.");
-    }
     if (!res.ok) {
+      if (res.status === 401) {
+        this.clearToken();
+        throw new Error("Google Drive authorization expired. Please sign in again.");
+      }
       const errText = await res.text();
       throw new Error(`Google Drive API error (${res.status}): ${errText}`);
     }
@@ -209,7 +316,7 @@ export class GoogleDriveProvider extends BaseStorageProvider {
       `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
     );
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
-    
+
     const searchRes = await this.driveApiFetch(searchUrl);
     if (searchRes.files && searchRes.files.length > 0) {
       return searchRes.files[0].id;
@@ -240,47 +347,79 @@ export class GoogleDriveProvider extends BaseStorageProvider {
   }
 
   /**
-   * Resolves the required folder structure:
+   * Resolves the required enterprise folder structure:
    * VisionX QuoteGen Pro/
+   * ├── Company Profiles/
+   * │   └── <CompanyName>/
    * ├── Quotations/
-   * ├── PDFs/
-   * ├── Company/
-   * ├── Drafts/
-   * ├── Templates/
-   * └── Backups/
+   * │   └── <Year>/<Month>/
+   * ├── Database/
+   * ├── Backups/
+   * └── Assets/
    */
   async getFolderStructure() {
     const rootId = await this.getOrCreateFolder("VisionX QuoteGen Pro", "root");
-    
-    const [quotationsId, pdfsId, companyId, draftsId, templatesId, backupsId] = await Promise.all([
+
+    const [companyProfilesId, quotationsId, databaseId, backupsId, assetsId] = await Promise.all([
+      this.getOrCreateFolder("Company Profiles", rootId),
       this.getOrCreateFolder("Quotations", rootId),
-      this.getOrCreateFolder("PDFs", rootId),
-      this.getOrCreateFolder("Company", rootId),
-      this.getOrCreateFolder("Drafts", rootId),
-      this.getOrCreateFolder("Templates", rootId),
+      this.getOrCreateFolder("Database", rootId),
       this.getOrCreateFolder("Backups", rootId),
+      this.getOrCreateFolder("Assets", rootId),
     ]);
 
     return {
       rootId,
+      companyProfilesId,
       quotationsId,
-      pdfsId,
-      companyId,
-      draftsId,
-      templatesId,
+      databaseId,
       backupsId,
+      assetsId,
     };
   }
 
-  /** Upserts a text/json or image file inside a folder */
-  async upsertFile(folderId, fileName, content, mimeType = "application/json") {
+  /** Get nested Quotation Year/Month folder */
+  async getQuotationMonthFolder(yearStr = "2026", monthStr = "August") {
+    const folders = await this.getFolderStructure();
+    const yearFolderId = await this.getOrCreateFolder(yearStr, folders.quotationsId);
+    const monthFolderId = await this.getOrCreateFolder(monthStr, yearFolderId);
+    return monthFolderId;
+  }
+
+  /** Get nested Company Profile folder */
+  async getCompanyProfileFolder(companyName = "DefaultCompany") {
+    const folders = await this.getFolderStructure();
+    const safeName = companyName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return await this.getOrCreateFolder(safeName, folders.companyProfilesId);
+  }
+
+  /** Conflict Handling: Creates `<FileName> (Device 2)` conflict copy if file changed concurrently */
+  async upsertFileWithConflictHandling(folderId, fileName, content, mimeType = "application/json", isConflictCheck = true) {
     const token = await this.authenticate();
 
-    // Check if file already exists in folder
+    // Check if file exists in folder
     const query = encodeURIComponent(`name='${fileName}' and '${folderId}' in parents and trashed=false`);
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime,description)`;
     const searchRes = await this.driveApiFetch(searchUrl);
-    const existingId = searchRes.files && searchRes.files.length > 0 ? searchRes.files[0].id : null;
+    const existingFile = searchRes.files && searchRes.files.length > 0 ? searchRes.files[0] : null;
+
+    let targetFileName = fileName;
+    let existingId = existingFile ? existingFile.id : null;
+
+    // Check for multi-device conflict
+    if (isConflictCheck && existingFile && existingFile.description && !existingFile.description.includes(this.deviceId)) {
+      // Different device updated this file -> Create Conflict Copy
+      const ext = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
+      const base = fileName.includes(".") ? fileName.substring(0, fileName.lastIndexOf(".")) : fileName;
+      targetFileName = `${base} (Device 2)${ext}`;
+      existingId = null; // Create new separate file for conflict copy
+
+      window.dispatchEvent(
+        new CustomEvent("quotationConflictDetected", {
+          detail: { originalFile: fileName, conflictFile: targetFileName },
+        })
+      );
+    }
 
     const boundary = "-------314159265358979323846";
     const delimiter = "\r\n--" + boundary + "\r\n";
@@ -292,7 +431,6 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     } else if (content instanceof Blob) {
       bodyBlob = content;
     } else if (typeof content === "string" && content.startsWith("data:")) {
-      // Base64 data URL
       const base64Data = content.split(",")[1];
       const byteCharacters = atob(base64Data);
       const byteNumbers = new Array(byteCharacters.length);
@@ -305,8 +443,9 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     }
 
     const metadata = {
-      name: fileName,
+      name: targetFileName,
       mimeType,
+      description: `Device: ${this.deviceId} • LastSync: ${new Date().toISOString()}`,
       ...(existingId ? {} : { parents: [folderId] }),
     };
 
@@ -331,47 +470,45 @@ export class GoogleDriveProvider extends BaseStorageProvider {
 
     if (!uploadRes.ok) {
       const err = await uploadRes.text();
-      throw new Error(`Google Drive upload file failed (${fileName}): ${err}`);
+      throw new Error(`Google Drive upload file failed (${targetFileName}): ${err}`);
     }
 
     const resFile = await uploadRes.json();
+    const nowIso = new Date().toISOString();
+    localStorage.setItem("gdrive_last_sync_time", nowIso);
+    this.lastSync = nowIso;
+    window.dispatchEvent(new Event("gdriveStatusUpdated"));
+
     return {
       fileId: resFile.id,
       driveUrl: resFile.webViewLink || `https://drive.google.com/file/d/${resFile.id}/view`,
       downloadUrl: resFile.webContentLink,
-      fileName,
+      fileName: targetFileName,
     };
   }
 
-  /** Uploads PDF Blob into PDFs folder */
-  async uploadPdf({ fileName, pdfBlob, visibility = null, allowedEmails = [], quotationId = null, customerName = "", refNo = "" }) {
-    const folders = await this.getFolderStructure();
-    const settings = localDB.getCloudSettings();
-    const vis = visibility || settings.defaultVisibility || "public";
-    const emails = Array.isArray(allowedEmails) && allowedEmails.length > 0 ? allowedEmails : (settings.allowedEmails || []);
+  /** Uploads PDF, DOCX, or XLSX file into structured Year/Month folder */
+  async uploadQuotationDocument({ fileName, fileBlob, mimeType = "application/pdf", quotationId = null, customerName = "", refNo = "" }) {
+    const dateObj = new Date();
+    const yearStr = String(dateObj.getFullYear());
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const monthStr = monthNames[dateObj.getMonth()];
 
-    const result = await this.upsertFile(folders.pdfsId, fileName, pdfBlob, "application/pdf");
-    
-    // Set Drive file visibility / permissions
-    if (result.fileId) {
-      await this.setFileVisibility(result.fileId, vis, emails).catch(err => {
-        console.warn("[GoogleDrive Permission Notice]:", err);
-      });
-    }
+    const monthFolderId = await this.getQuotationMonthFolder(yearStr, monthStr);
+    const result = await this.upsertFileWithConflictHandling(monthFolderId, fileName, fileBlob, mimeType);
 
-    // Save CloudFiles local metadata record
-    const blobSize = pdfBlob instanceof Blob ? pdfBlob.size : typeof pdfBlob === "string" ? Math.round(pdfBlob.length * 0.75) : 0;
+    const blobSize = fileBlob instanceof Blob ? fileBlob.size : 0;
     localDB.saveCloudFile({
       driveFileId: result.fileId,
       quotationId: quotationId || null,
-      fileName,
-      mimeType: "application/pdf",
-      folderName: "PDFs",
+      fileName: result.fileName,
+      mimeType,
+      folderName: `Quotations/${yearStr}/${monthStr}`,
       size: blobSize,
-      visibility: vis,
+      visibility: "public",
       shareUrl: result.driveUrl,
-      ownerEmail: this.userEmail || localStorage.getItem("gdrive_user_email") || "user@visionx.com",
-      allowedEmails: emails,
+      ownerEmail: this.userEmail || localStorage.getItem("gdrive_user_email") || "user@VisionX.com",
+      allowedEmails: [],
       customerName,
       quotationNumber: refNo,
     });
@@ -379,433 +516,307 @@ export class GoogleDriveProvider extends BaseStorageProvider {
     return result;
   }
 
-  /** Set file permissions: public (anyone reader) vs private (specific allowed emails) */
-  async setFileVisibility(fileId, visibility = "public", allowedEmails = []) {
-    const token = await this.authenticate();
-    
-    if (visibility === "public") {
-      try {
-        // List existing permissions to revoke email-specific permissions if switching from private
-        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role)`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+  /** Make file public (Anyone with link -> Viewer) */
+  async makeFilePublic(fileId) {
+    try {
+      const token = await this.authenticate();
+      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "reader",
+          type: "anyone",
+        }),
+      });
+    } catch (e) {
+      console.warn("Set drive file public warning:", e);
+    }
+    return `https://drive.google.com/file/d/${fileId}/view`;
+  }
 
-        if (permRes.ok) {
-          const permData = await permRes.json();
-          if (permData.permissions) {
-            for (const p of permData.permissions) {
-              if (p.type === "user" && p.role !== "owner") {
-                await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${p.id}`, {
-                  method: "DELETE",
-                  headers: { Authorization: `Bearer ${token}` }
-                }).catch(() => {});
-              }
-            }
-          }
+  /** Invite user to Drive file */
+  async inviteUserToFile(fileId, email, role = "Viewer") {
+    try {
+      const token = await this.authenticate();
+      const driveRole = role === "Editor" ? "writer" : role === "Commenter" ? "commenter" : "reader";
+      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=true`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: driveRole,
+          type: "user",
+          emailAddress: email,
+        }),
+      });
+    } catch (e) {
+      console.warn("Add drive permission user warning:", e);
+    }
+    return true;
+  }
+
+  /** Legacy helper fallback */
+  async uploadPdf(opts) {
+    return await this.uploadQuotationDocument({
+      fileName: opts.fileName,
+      fileBlob: opts.pdfBlob,
+      mimeType: "application/pdf",
+      quotationId: opts.quotationId,
+      customerName: opts.customerName,
+      refNo: opts.refNo,
+    });
+  }
+
+  /** Auto-sync trigger for quotation or company profile updates */
+  async triggerAutoSync(triggerType, data = {}) {
+    if (!await this.isConnected()) return;
+    try {
+      const folders = await this.getFolderStructure();
+
+      if (triggerType === "company_profile" || triggerType === "company_profile_update") {
+        const companyName = data.companyName || "DefaultCompany";
+        const companyFolderId = await this.getCompanyProfileFolder(companyName);
+
+        if (data.logo) {
+          await this.upsertFileWithConflictHandling(companyFolderId, "Logo.png", data.logo, "image/png", false);
         }
+        if (data.signature) {
+          await this.upsertFileWithConflictHandling(companyFolderId, "Signature.png", data.signature, "image/png", false);
+        }
+        await this.upsertFileWithConflictHandling(companyFolderId, "Settings.json", JSON.stringify(data, null, 2), "application/json", false);
+      } else {
+        // Sync entire database snapshot
+        const allQuotations = localDB.getQuotations();
+        const allProfiles = localDB.getCompanyProfiles();
+        const dbSnapshot = {
+          version: "2.0 Enterprise",
+          lastSync: new Date().toISOString(),
+          quotations: allQuotations,
+          profiles: allProfiles,
+        };
 
-        // Add 'anyone' reader permission
-        await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-          method: "POST",
+        await this.upsertFileWithConflictHandling(folders.databaseId, "quotation.db.json", JSON.stringify(dbSnapshot, null, 2), "application/json", false);
+      }
+    } catch (err) {
+      console.warn("[Background Auto-Sync Notice]:", err);
+    }
+  }
+
+  /** Execute full workspace synchronization */
+  async syncNow() {
+    return await this.triggerAutoSync("manual_full_sync");
+  }
+
+  /**
+   * Permanently delete a file from Google Drive using its unique Google Drive File ID.
+   * DELETE https://www.googleapis.com/drive/v3/files/{fileId}
+   */
+  async deleteFile(fileId) {
+    if (!fileId) {
+      throw new Error("Cannot delete file from Google Drive: missing Google Drive File ID.");
+    }
+
+    let token = await this.authenticate();
+    const endpoint = `https://www.googleapis.com/drive/v3/files/${fileId}`;
+
+    let res = await fetch(endpoint, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        console.warn(`[Google Drive Delete] File ${fileId} already deleted or not found (404). Proceeding with local removal.`);
+        return true;
+      }
+      if (res.status === 401) {
+        // Token expired -> Clear token & re-authenticate retry
+        this.clearToken();
+        token = await this.authenticate();
+        res = await fetch(endpoint, {
+          method: "DELETE",
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            role: "reader",
-            type: "anyone",
-          }),
         });
-
-        // Get updated share URL
-        const fileInfo = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,webViewLink,webContentLink`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(r => r.json());
-
-        return {
-          success: true,
-          shareUrl: fileInfo.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
-        };
-      } catch (e) {
-        console.warn("[GoogleDrive] Public permission notice:", e);
-        return { success: false, shareUrl: `https://drive.google.com/file/d/${fileId}/view` };
-      }
-    } else if (visibility === "private") {
-      try {
-        // List existing permissions to revoke 'anyone' public link access
-        const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role)`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (permRes.ok) {
-          const permData = await permRes.json();
-          if (permData.permissions) {
-            for (const p of permData.permissions) {
-              if (p.type === "anyone") {
-                await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${p.id}`, {
-                  method: "DELETE",
-                  headers: { Authorization: `Bearer ${token}` }
-                }).catch(() => {});
-              }
-            }
-          }
-        }
-
-        // Grant access to allowed emails
-        if (Array.isArray(allowedEmails) && allowedEmails.length > 0) {
-          for (const email of allowedEmails) {
-            if (!email || !email.includes("@")) continue;
-            try {
-              await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  role: "reader",
-                  type: "user",
-                  emailAddress: email.trim(),
-                }),
-              });
-            } catch (e) {
-              console.warn(`[GoogleDrive] Private permission notice for ${email}:`, e);
-            }
-          }
-        }
-
-        return { success: true, shareUrl: null };
-      } catch (e) {
-        console.warn("[GoogleDrive] Private permission notice:", e);
-        return { success: false, shareUrl: null };
-      }
-    }
-  }
-
-  /** Move file to trash on Google Drive */
-  async deleteDriveFile(fileId) {
-    if (!fileId) return false;
-    const token = await this.authenticate();
-    try {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ trashed: true }),
-      });
-      return res.ok;
-    } catch (e) {
-      console.warn("[GoogleDrive Delete File Notice]:", e);
-      return false;
-    }
-  }
-
-  /** Restore file from trash on Google Drive */
-  async restoreDriveFile(fileId) {
-    if (!fileId) return false;
-    const token = await this.authenticate();
-    try {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ trashed: false }),
-      });
-      return res.ok;
-    } catch (e) {
-      console.warn("[GoogleDrive Restore File Notice]:", e);
-      return false;
-    }
-  }
-
-  /** Rename file on Google Drive */
-  async renameDriveFile(fileId, newName) {
-    if (!fileId || !newName) return false;
-    const token = await this.authenticate();
-    try {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: newName }),
-      });
-      return res.ok;
-    } catch (e) {
-      console.warn("[GoogleDrive Rename File Notice]:", e);
-      return false;
-    }
-  }
-
-  /** Uploads single Quotation JSON into Quotations folder */
-  async uploadQuotation(quotationData) {
-    const folders = await this.getFolderStructure();
-    const refNo = quotationData.quotationNo || quotationData.projectDetails?.referenceNo || quotationData._id || `QTN-${Date.now()}`;
-    const fileName = `${refNo}.json`;
-    return this.upsertFile(folders.quotationsId, fileName, JSON.stringify(quotationData, null, 2), "application/json");
-  }
-
-  /** Uploads Company Profile & Settings files into Company folder */
-  async uploadCompanyProfile() {
-    const folders = await this.getFolderStructure();
-    const profile = localDB.getCompanyProfile();
-
-    await Promise.all([
-      this.upsertFile(folders.companyId, "settings.json", JSON.stringify(profile, null, 2)),
-      this.upsertFile(folders.companyId, "bank.json", JSON.stringify(profile.bankDetails || {}, null, 2)),
-      this.upsertFile(folders.companyId, "payment_terms.json", JSON.stringify(profile.paymentTerms || {}, null, 2)),
-      this.upsertFile(folders.companyId, "terms.json", JSON.stringify({
-        defaultTerms: profile.defaultTerms || "",
-        defaultNotes: profile.defaultNotes || "",
-        defaultExclusions: profile.defaultExclusions || "",
-        defaultWarranty: profile.defaultWarranty || "",
-        validity: profile.defaultValidity || ""
-      }, null, 2)),
-    ]);
-
-    if (profile.companyLogo && profile.companyLogo.startsWith("data:")) {
-      await this.upsertFile(folders.companyId, "logo.png", profile.companyLogo, "image/png");
-    }
-  }
-
-  /** Uploads active draft to Drafts folder */
-  async uploadDraft(draftData) {
-    if (!draftData) return null;
-    const folders = await this.getFolderStructure();
-    return this.upsertFile(folders.draftsId, "draft.json", JSON.stringify(draftData, null, 2));
-  }
-
-  /** Perform full immediate Backup Now */
-  async backupAllNow(onProgress = null) {
-    if (onProgress) onProgress("Initializing Cloud Backup...", 10);
-    const folders = await this.getFolderStructure();
-
-    if (onProgress) onProgress("Backing up Company Profile & Settings...", 30);
-    await this.uploadCompanyProfile();
-
-    if (onProgress) onProgress("Backing up Local Quotations...", 60);
-    const quotations = localDB.getQuotations();
-    for (let i = 0; i < quotations.length; i++) {
-      await this.uploadQuotation(quotations[i]);
-    }
-
-    if (onProgress) onProgress("Backing up Active Drafts & Templates...", 85);
-    const draft = localStorage.getItem("previewDraft");
-    if (draft) {
-      try {
-        await this.uploadDraft(JSON.parse(draft));
-      } catch (e) { }
-    }
-
-    const backupPayload = {
-      app: "QuoteGen Pro",
-      version: "2.0-cloud",
-      exportedAt: new Date().toISOString(),
-      companyProfile: localDB.getCompanyProfile(),
-      quotations: localDB.getQuotations(),
-      draft: localStorage.getItem("previewDraft") ? JSON.parse(localStorage.getItem("previewDraft")) : null,
-    };
-    await this.upsertFile(folders.backupsId, "quotegen_pro_backup.json", JSON.stringify(backupPayload, null, 2));
-
-    const nowIso = new Date().toISOString();
-    this.lastSync = nowIso;
-    localStorage.setItem("gdrive_last_sync_time", nowIso);
-    window.dispatchEvent(new Event("gdriveStatusUpdated"));
-
-    if (onProgress) onProgress("✓ Full Backup Completed Successfully!", 100);
-    return { success: true, count: quotations.length };
-  }
-
-  /** Fetch Remote Quotations List from Google Drive for Restore Screen */
-  async fetchRemoteQuotationsList() {
-    const token = await this.authenticate();
-    const folders = await this.getFolderStructure();
-
-    const query = encodeURIComponent(`'${folders.quotationsId}' in parents and trashed=false`);
-    const res = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime,webViewLink)`);
-
-    const items = [];
-    if (res.files && res.files.length > 0) {
-      for (const f of res.files) {
-        try {
-          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (contentRes.ok) {
-            const qData = await contentRes.json();
-            items.push({
-              fileId: f.id,
-              quotationNo: qData.quotationNo || qData.projectDetails?.referenceNo || f.name.replace(".json", ""),
-              clientName: qData.clientName || qData.projectDetails?.clientName || "Client",
-              projectName: qData.projectDetails?.projectName || qData.projectName || "Project",
-              updatedAt: qData.updatedAt || f.modifiedTime || f.createdTime,
-              data: qData,
-              driveUrl: f.webViewLink,
-            });
-          }
-        } catch (readErr) {
-          console.warn("[GoogleDrive] Error parsing remote quotation file:", readErr);
+        if (res.ok || res.status === 404) {
+          return true;
         }
       }
+      const errText = await res.text();
+      throw new Error(`Google Drive Delete error (${res.status}): ${errText}`);
     }
 
-    return items;
+    return true;
   }
 
-  /** Performs full bidirectional Sync (Upload Local + Fetch & Merge Remote) */
-  async syncNow(onProgress = null) {
-    if (onProgress) onProgress("Connecting to Google Drive...", 10);
-    const token = await this.authenticate();
-    const folders = await this.getFolderStructure();
+  /**
+   * Set Google Drive File Visibility using Google Drive Permissions API.
+   * - isPublic = true: POST https://www.googleapis.com/drive/v3/files/{fileId}/permissions
+   *   Body: { role: "reader", type: "anyone" }
+   * - isPublic = false: DELETE https://www.googleapis.com/drive/v3/files/{fileId}/permissions/{permissionId}
+   * Returns: { success: true, webViewLink, isPublic }
+   */
+  async setFileVisibility(fileId, isPublic = true) {
+    if (!fileId) throw new Error("Missing Google Drive File ID.");
 
-    // 1. Upload Company Profile & Settings
-    if (onProgress) onProgress("Syncing Company Settings...", 30);
-    await this.uploadCompanyProfile();
-
-    // 2. Upload Local Quotations
-    if (onProgress) onProgress("Syncing Quotation History...", 60);
-    const quotations = localDB.getQuotations();
-    for (const q of quotations) {
-      await this.uploadQuotation(q);
-    }
-
-    // 3. Upload Active Draft
-    const draft = localStorage.getItem("previewDraft");
-    if (draft) {
-      try {
-        await this.uploadDraft(JSON.parse(draft));
-      } catch (e) { }
-    }
-
-    // 4. Upload Complete Weekly Backup JSON
-    if (onProgress) onProgress("Creating Weekly Cloud Backup...", 80);
-    const backupPayload = {
-      app: "QuoteGen Pro",
-      version: "2.0-cloud",
-      exportedAt: new Date().toISOString(),
-      companyProfile: localDB.getCompanyProfile(),
-      quotations: localDB.getQuotations(),
-      draft: localStorage.getItem("previewDraft") ? JSON.parse(localStorage.getItem("previewDraft")) : null,
-    };
-    await this.upsertFile(folders.backupsId, "quotegen_pro_backup.json", JSON.stringify(backupPayload, null, 2));
-
-    // 5. Fetch Remote Quotations & Merge
-    if (onProgress) onProgress("Checking for remote updates...", 90);
-    const listQuery = encodeURIComponent(`'${folders.quotationsId}' in parents and trashed=false`);
-    const remoteRes = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${listQuery}&fields=files(id,name)`);
+    let token = await this.authenticate();
     
-    let restoredCount = 0;
-    if (remoteRes.files && remoteRes.files.length > 0) {
-      for (const remoteFile of remoteRes.files) {
-        try {
-          const fileContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${remoteFile.id}?alt=media`, {
+    if (isPublic) {
+      const endpoint = `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "reader",
+          type: "anyone",
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn("[Google Drive Permissions Error]:", errText);
+      }
+    } else {
+      const listEndpoint = `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`;
+      const listRes = await fetch(listEndpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (listRes.ok) {
+        const data = await listRes.json();
+        const anyonePerm = (data.permissions || []).find(p => p.type === "anyone");
+        if (anyonePerm) {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${anyonePerm.id}`, {
+            method: "DELETE",
             headers: { Authorization: `Bearer ${token}` }
           });
-          if (fileContentRes.ok) {
-            const remoteQuote = await fileContentRes.json();
-            if (remoteQuote && (remoteQuote._id || remoteQuote.id || remoteQuote.quotationNo)) {
-              localDB.saveQuotation(remoteQuote);
-              restoredCount++;
-            }
-          }
-        } catch (readErr) {
-          console.warn("[GoogleDrive] Remote file fetch notice:", readErr);
         }
       }
     }
 
-    const nowIso = new Date().toISOString();
-    this.lastSync = nowIso;
-    localStorage.setItem("gdrive_last_sync_time", nowIso);
-    window.dispatchEvent(new Event("gdriveStatusUpdated"));
-    window.dispatchEvent(new Event("quotationDataUpdated"));
+    const getRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,webViewLink,webContentLink`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
 
-    if (onProgress) onProgress("✓ Cloud Sync Completed", 100);
-    return { success: true, lastSync: nowIso, syncedCount: quotations.length + restoredCount };
+    let webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
+    if (getRes.ok) {
+      const meta = await getRes.json();
+      if (meta.webViewLink) webViewLink = meta.webViewLink;
+    }
+
+    return {
+      success: true,
+      fileId,
+      webViewLink,
+      isPublic,
+    };
   }
 
-  /** Auto-Restores Cloud Data when connecting on a new device */
-  async autoRestore(onProgress = null) {
-    if (onProgress) onProgress("Searching for Google Drive backup...", 10);
-    const token = await this.authenticate();
-    const folders = await this.getFolderStructure();
+  /**
+   * Upload a single quotation PDF or JSON file to Google Drive "VisionX QuoteGen Pro/Quotations/"
+   */
+  async uploadSingleQuotation(quotationData) {
+    let token = await this.authenticate();
+    const folders = await this.ensureRootFolderStructure();
+    
+    const filename = `${quotationData.referenceNo || quotationData.quotationNo || "Quotation"}.json`;
+    const content = JSON.stringify(quotationData, null, 2);
 
-    // Restore Company Settings
-    try {
-      const settingsQuery = encodeURIComponent(`name='settings.json' and '${folders.companyId}' in parents and trashed=false`);
-      const settingsSearch = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${settingsQuery}&fields=files(id,name)`);
-      if (settingsSearch.files && settingsSearch.files.length > 0) {
-        const fileId = settingsSearch.files[0].id;
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const profile = await res.json();
-          localDB.saveCompanyProfile(profile);
-        }
-      }
-    } catch (e) {
-      console.warn("[GoogleDrive] Auto-restore settings notice:", e);
+    const fileMeta = await this.upsertFileWithConflictHandling(
+      folders.quotationsId,
+      filename,
+      content,
+      "application/json",
+      true
+    );
+
+    const fileId = fileMeta.id;
+    const webViewLink = fileMeta.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+
+    await this.setFileVisibility(fileId, true);
+
+    if (localDB.saveCloudFile) {
+      localDB.saveCloudFile({
+        id: quotationData.id || quotationData.referenceNo,
+        quotationId: quotationData.id || quotationData.referenceNo,
+        fileName: filename,
+        fileId: fileId,
+        driveFileId: fileId,
+        driveShareUrl: webViewLink,
+        webViewLink: webViewLink,
+        createdAt: new Date().toISOString(),
+        isPublic: true,
+      });
     }
 
-    // Restore Remote Quotations
-    try {
-      const qQuery = encodeURIComponent(`'${folders.quotationsId}' in parents and trashed=false`);
-      const qSearch = await this.driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${qQuery}&fields=files(id,name)`);
-      if (qSearch.files && qSearch.files.length > 0) {
-        for (const f of qSearch.files) {
-          const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const qData = await res.json();
-            localDB.saveQuotation(qData);
-          }
-        }
+    return {
+      fileId,
+      driveFileId: fileId,
+      driveShareUrl: webViewLink,
+      webViewLink,
+      isPublic: true,
+    };
+  }
+
+  /**
+   * Full quotation deletion workflow
+   */
+  async deleteQuotationBackup(fileOrId) {
+    let driveFileId = null;
+    let localRecordId = null;
+    let quotationId = null;
+
+    if (typeof fileOrId === "string") {
+      localRecordId = fileOrId;
+      const found = localDB.getCloudFiles ? localDB.getCloudFiles().find(f => f.id === fileOrId || f.driveFileId === fileOrId) : null;
+      if (found) {
+        driveFileId = found.driveFileId || found.fileId || found.id;
+        quotationId = found.quotationId;
+      } else {
+        driveFileId = fileOrId;
       }
-    } catch (e) {
-      console.warn("[GoogleDrive] Auto-restore quotations notice:", e);
+    } else if (fileOrId && typeof fileOrId === "object") {
+      localRecordId = fileOrId.id;
+      driveFileId = fileOrId.driveFileId || fileOrId.fileId || fileOrId.id;
+      quotationId = fileOrId.quotationId;
     }
 
-    const nowIso = new Date().toISOString();
-    this.lastSync = nowIso;
-    localStorage.setItem("gdrive_last_sync_time", nowIso);
+    if (driveFileId) {
+      await this.deleteFile(driveFileId);
+    }
+
+    if (localDB.permanentDeleteCloudFile && localRecordId) {
+      localDB.permanentDeleteCloudFile(localRecordId);
+    } else if (localDB.deleteCloudFile && localRecordId) {
+      localDB.deleteCloudFile(localRecordId);
+    }
+
+    if (quotationId && localDB.deleteQuotation) {
+      localDB.deleteQuotation(quotationId);
+    } else if (localRecordId && localDB.deleteQuotation) {
+      localDB.deleteQuotation(localRecordId);
+    }
+
+    window.dispatchEvent(new Event("cloudFilesUpdated"));
     window.dispatchEvent(new Event("gdriveStatusUpdated"));
     window.dispatchEvent(new Event("quotationDataUpdated"));
+
+    return true;
   }
 }
 
 export const googleDriveProvider = new GoogleDriveProvider();
 
-/** Helper function to trigger background auto-sync based on user preferences */
-export async function triggerAutoSync(triggerEvent = "save", payload = null) {
-  try {
-    const isConnected = await googleDriveProvider.isConnected();
-    if (!isConnected) return;
-
-    const setting = localStorage.getItem("gdrive_auto_sync_setting") || "every_save";
-    if (setting === "never") return;
-
-    if (
-      setting === "realtime" ||
-      (setting === "every_save" && triggerEvent === "save") ||
-      (setting === "every_export" && triggerEvent === "export")
-    ) {
-      if (triggerEvent === "export" && payload?.fileName && payload?.pdfBlob) {
-        await googleDriveProvider.uploadPdf(payload);
-      } else if (triggerEvent === "save" && payload) {
-        await googleDriveProvider.uploadQuotation(payload);
-        await googleDriveProvider.uploadCompanyProfile();
-      } else {
-        await googleDriveProvider.syncNow();
-      }
-    }
-  } catch (err) {
-    console.warn("[GoogleDrive AutoSync Notice]:", err);
-  }
-}
+export const triggerAutoSync = (type, data) => {
+  return googleDriveProvider.triggerAutoSync(type, data);
+};

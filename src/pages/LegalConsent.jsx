@@ -137,8 +137,8 @@ function PrivacyPolicyContent() {
       </PolicySection>
       <PolicySection title="9. Contact">
         For questions regarding this Privacy Policy, contact VisionX Support:{" "}
-        <a href="mailto:visionxnxtgen2026@gmail.com" className="text-blue-600 font-semibold underline">
-          visionxnxtgen2026@gmail.com
+        <a href="mailto:VisionXnxtgen2026@gmail.com" className="text-blue-600 font-semibold underline">
+          VisionXnxtgen2026@gmail.com
         </a>
       </PolicySection>
     </>
@@ -191,8 +191,8 @@ function TermsContent() {
       </PolicySection>
       <PolicySection title="9. Contact">
         For questions regarding these Terms &amp; Conditions, contact VisionX Support:{" "}
-        <a href="mailto:visionxnxtgen2026@gmail.com" className="text-blue-600 font-semibold underline">
-          visionxnxtgen2026@gmail.com
+        <a href="mailto:VisionXnxtgen2026@gmail.com" className="text-blue-600 font-semibold underline">
+          VisionXnxtgen2026@gmail.com
         </a>
       </PolicySection>
     </>
@@ -251,10 +251,10 @@ function LegalCard({ icon: Icon, iconBg, iconColor, title, description, onRead }
 
 // ─── Main LegalConsent Screen ─────────────────────────────────────────────────
 export default function LegalConsent({ onAccept }) {
-  const [termsChecked, setTermsChecked]     = useState(false);
+  const [termsChecked, setTermsChecked] = useState(false);
   const [privacyChecked, setPrivacyChecked] = useState(false);
-  const [showTerms, setShowTerms]           = useState(false);
-  const [showPrivacy, setShowPrivacy]       = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const canContinue = termsChecked && privacyChecked;
 
@@ -493,16 +493,16 @@ export default function LegalConsent({ onAccept }) {
                 style={
                   canContinue
                     ? {
-                        background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-                        color: "#fff",
-                        boxShadow: "0 8px 24px rgba(37,99,235,0.35)",
-                        cursor: "pointer",
-                      }
+                      background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                      color: "#fff",
+                      boxShadow: "0 8px 24px rgba(37,99,235,0.35)",
+                      cursor: "pointer",
+                    }
                     : {
-                        background: "#f1f5f9",
-                        color: "#94a3b8",
-                        cursor: "not-allowed",
-                      }
+                      background: "#f1f5f9",
+                      color: "#94a3b8",
+                      cursor: "not-allowed",
+                    }
                 }
               >
                 {canContinue ? (
@@ -519,11 +519,11 @@ export default function LegalConsent({ onAccept }) {
                 <p className="text-[11px] text-slate-400 font-medium mb-0.5">Need Assistance?</p>
                 <p className="text-[11px] font-bold text-slate-600">VisionX Support</p>
                 <a
-                  href="mailto:visionxnxtgen2026@gmail.com"
+                  href="mailto:VisionXnxtgen2026@gmail.com"
                   className="text-[11px] font-semibold underline underline-offset-2 mt-0.5"
                   style={{ color: "#2563eb" }}
                 >
-                  visionxnxtgen2026@gmail.com
+                  VisionXnxtgen2026@gmail.com
                 </a>
               </div>
             </div>

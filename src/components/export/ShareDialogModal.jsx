@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { localDB } from "../../utils/localDB";
 import { googleDriveProvider } from "../../utils/googleDriveProvider";
-import QRCodeModal from "../settings/cloud/QRCodeModal";
+import QRCodeModal from "./QRCodeModal";
 
 /**
  * 📱 ShareDialogModal — Mobile-First Google Drive Bottom Sheet Permission Manager.
@@ -35,7 +35,7 @@ export default function ShareDialogModal({
       const resolvedUrl = file.shareUrl || (file.driveFileId ? `https://drive.google.com/file/d/${file.driveFileId}/view` : "");
       setDriveUrl(resolvedUrl);
 
-      const defaultOwner = localStorage.getItem("gdrive_user_email") || "owner@visionx.com";
+      const defaultOwner = localStorage.getItem("gdrive_user_email") || "owner@VisionX.com";
       const list = Array.isArray(file.allowedEmails) && file.allowedEmails.length > 0
         ? file.allowedEmails
         : [defaultOwner, "customer@gmail.com"];
@@ -213,9 +213,8 @@ export default function ShareDialogModal({
               <div className="grid grid-cols-2 bg-slate-200/70 p-1 rounded-2xl relative">
                 <button
                   onClick={() => handleSwitchTab("public")}
-                  className={`relative z-10 py-2 text-xs font-black rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                    activeTab === "public" ? "text-emerald-700" : "text-slate-600 hover:text-slate-900"
-                  }`}
+                  className={`relative z-10 py-2 text-xs font-black rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${activeTab === "public" ? "text-emerald-700" : "text-slate-600 hover:text-slate-900"
+                    }`}
                 >
                   <Globe size={15} />
                   <span>🌍 Public</span>
@@ -223,9 +222,8 @@ export default function ShareDialogModal({
 
                 <button
                   onClick={() => handleSwitchTab("private")}
-                  className={`relative z-10 py-2 text-xs font-black rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                    activeTab === "private" ? "text-amber-700" : "text-slate-600 hover:text-slate-900"
-                  }`}
+                  className={`relative z-10 py-2 text-xs font-black rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${activeTab === "private" ? "text-amber-700" : "text-slate-600 hover:text-slate-900"
+                    }`}
                 >
                   <Lock size={15} />
                   <span>🔒 Private</span>
@@ -235,9 +233,8 @@ export default function ShareDialogModal({
                 <motion.div
                   layout
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  className={`absolute inset-y-1 w-[calc(50%-4px)] bg-white rounded-xl shadow-xs ${
-                    activeTab === "public" ? "left-1 border border-emerald-200/80" : "left-[calc(50%+2px)] border border-amber-200/80"
-                  }`}
+                  className={`absolute inset-y-1 w-[calc(50%-4px)] bg-white rounded-xl shadow-xs ${activeTab === "public" ? "left-1 border border-emerald-200/80" : "left-[calc(50%+2px)] border border-amber-200/80"
+                    }`}
                 />
               </div>
             </div>

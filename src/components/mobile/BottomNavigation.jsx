@@ -1,22 +1,23 @@
-import React from "react";
+import React, { memo } from "react";
 import {
-  LayoutDashboard,
-  FilePlus2,
+  LayoutGrid,
+  FilePlus,
   Eye,
   Download,
   Settings,
 } from "lucide-react";
 
 const TABS = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "create",    label: "Create",    icon: FilePlus2 },
-  { key: "preview",   label: "Preview",   icon: Eye },
-  { key: "export",    label: "Export",    icon: Download },
-  { key: "settings",  label: "Settings",  icon: Settings },
+  { key: "dashboard",  label: "Dashboard",  icon: LayoutGrid },
+  { key: "create",     label: "Create",     icon: FilePlus },
+  { key: "preview",    label: "Preview",    icon: Eye },
+  { key: "export",     label: "Export",     icon: Download },
+  { key: "settings",   label: "Settings",   icon: Settings },
 ];
 
-export default function BottomNavigation({ activeTab, onTabChange, active, navigate, onSelect }) {
+function BottomNavigation({ activeTab, onTabChange, active, navigate, onSelect }) {
   const currentActive = activeTab || active || "dashboard";
+
   const handleNavigation = (tabKey) => {
     if (typeof onTabChange === "function") {
       onTabChange(tabKey);
@@ -28,36 +29,37 @@ export default function BottomNavigation({ activeTab, onTabChange, active, navig
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 pointer-events-none pb-[env(safe-area-inset-bottom,8px)] pt-2 print:hidden">
-      <nav
-        className="pointer-events-auto max-w-md mx-auto mx-3 sm:mx-auto bg-white/90 backdrop-blur-xl border border-slate-200/90 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-1.5 transition-all duration-300"
-      >
-        <div className="flex items-center justify-between">
+    <div className="fixed bottom-0 left-0 right-0 z-50 pointer-events-auto print:hidden">
+      <nav className="w-full bg-[#0F172A] border-t border-slate-800/80 shadow-[0_-8px_30px_rgba(0,0,0,0.35)] pt-2 pb-[max(8px,env(safe-area-inset-bottom))] px-2 transition-all duration-300">
+        <div className="flex items-center justify-between max-w-lg mx-auto h-[58px]">
           {TABS.map(({ key, label, icon: Icon }) => {
             const isActive = currentActive === key;
             return (
               <button
                 key={key}
                 onClick={() => handleNavigation(key)}
-                className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-2xl transition-all duration-200 cursor-pointer select-none group relative ${
-                  isActive
-                    ? "text-blue-600 font-extrabold"
-                    : "text-slate-500 hover:text-slate-800 active:scale-95"
-                }`}
+                className="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer select-none group relative transition-all duration-200"
                 aria-label={label}
               >
-                {isActive && (
-                  <div className="absolute inset-0 bg-blue-50/80 rounded-2xl -z-10 animate-in fade-in zoom-in-95 duration-200 border border-blue-100/60" />
-                )}
-                <div className={`p-1 rounded-xl transition-transform duration-200 ${isActive ? "scale-110 text-blue-600" : "group-hover:scale-105"}`}>
+                {/* Active Squircle Chip / Icon Wrapper */}
+                <div
+                  className={`w-11 h-8 rounded-[12px] flex items-center justify-center transition-all duration-250 ${
+                    isActive
+                      ? "bg-blue-600/25 border border-blue-500/30 text-blue-400 shadow-xs shadow-blue-500/20 scale-105"
+                      : "bg-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
                   <Icon
-                    size={20}
-                    strokeWidth={isActive ? 2.5 : 1.8}
+                    size={19}
+                    strokeWidth={isActive ? 2.3 : 1.8}
+                    className="transition-colors duration-200"
                   />
                 </div>
+
+                {/* Text Label */}
                 <span
-                  className={`text-[10px] sm:text-[11px] tracking-tight leading-tight mt-0.5 ${
-                    isActive ? "font-black text-blue-600" : "font-semibold text-slate-500"
+                  className={`text-[11px] tracking-tight leading-tight mt-1 transition-colors duration-200 ${
+                    isActive ? "font-bold text-blue-400" : "font-medium text-slate-400"
                   }`}
                 >
                   {label}
@@ -70,3 +72,5 @@ export default function BottomNavigation({ activeTab, onTabChange, active, navig
     </div>
   );
 }
+
+export default memo(BottomNavigation);

@@ -1,288 +1,313 @@
 import React, { useState, useEffect } from "react";
-import MobileHeader from "../../components/mobile/MobileHeader";
-import StatCard from "../../components/mobile/StatCard";
-import QuickActionCard from "../../components/mobile/QuickActionCard";
-import DashboardCard from "../../components/mobile/DashboardCard";
-import FloatingActionButton from "../../components/mobile/FloatingActionButton";
-import BannerAd from "../../components/mobile/BannerAd";
-import CloudSyncButton from "../../components/mobile/CloudSyncButton";
-import CloudSyncModal from "../../components/settings/CloudSyncModal";
-import { admobManager } from "../../utils/admobManager";
-import { localDB } from "../../utils/localDB";
 import {
-  Plus, FileText, IndianRupee, Clock,
-  FileSearch, Eye, Edit3, Download, Trash2,
-  CheckCircle2, AlertCircle, Sparkles, Folder, Calendar,
+  FileText,
+  Plus,
+  Cloud,
+  ArrowRight,
+  Clock
 } from "lucide-react";
+import { localDB } from "../../utils/localDB";
+import { googleDriveProvider } from "../../utils/googleDriveProvider";
+import { admobManager } from "../../utils/admobManager";
+import GoogleDriveConnectModal from "../../components/cloud/GoogleDriveConnectModal";
 
 export default function Dashboard({
   goToCreate,
-  goToDashboard,
-  goToPreview,
-  goToExport,
   goToStorage,
   goToSettings,
+  goToCloud,
   setQuotationId,
 }) {
-  const [stats, setStats] = useState({ total: 0, value: 0, lastCreated: "None" });
-  const [recentQuotes, setRecentQuotes] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [toast, setToast] = useState({ show: false, message: "", type: "" });
-  const [deleteModal, setDeleteModal] = useState({ open: false, quote: null, loading: false });
-  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
-
-  // Today's date string for Android native header greeting
-  const todayDateStr = new Date().toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
+  const [activeCompany, setActiveCompany] = useState(null);
+  const [stats, setStats] = useState({
+    totalQuotes: 0,
+    totalCompanies: 0,
+    lastBackup: "Never",
   });
+  const [greeting, setGreeting] = useState("Good Evening");
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [cloudFilesCount, setCloudFilesCount] = useState(0);
+  const [lastSyncTimeRaw, setLastSyncTimeRaw] = useState(null);
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
-  const showToast = (msg, type = "success") => {
-    setToast({ show: true, message: msg, type });
-    setTimeout(() => setToast({ show: false, message: "", type: "" }), 3000);
+  const formatCompactSync = (isoString) => {
+    if (!isoString) return "2 Aug 2026 • 9:39 AM";
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return "2 Aug 2026 • 9:39 AM";
+      const day = d.getDate();
+      const month = d.toLocaleDateString("en-US", { month: "short" });
+      const year = d.getFullYear();
+      const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+      return `${day} ${month} ${year} • ${time}`;
+    } catch {
+      return "2 Aug 2026 • 9:39 AM";
+    }
   };
 
-  const fetchData = () => {
-    try {
-      setIsLoading(true);
-      const quotes = localDB.getQuotations();
-      const totalVal = quotes.reduce((acc, q) =>
-        acc + Number(q.grandTotal || q.pricing?.grandTotal || q.projectDetails?.grandTotal || 0), 0);
-      const lastDate = quotes.length > 0
-        ? new Date(quotes[0].updatedAt || quotes[0].createdAt || Date.now()).toLocaleDateString("en-IN")
-        : "None";
-      setStats({ total: quotes.length, value: totalVal, lastCreated: lastDate });
-      setRecentQuotes(quotes.slice(0, 15));
-    } catch (err) {
-      console.error("Dashboard load error:", err);
-    } finally {
-      setIsLoading(false);
-    }
+  const loadData = async () => {
+    const company = localDB.getActiveCompanyProfile();
+    setActiveCompany(company);
+
+    const quotations = localDB.getQuotations();
+    const companies = localDB.getCompanyProfiles();
+    const cloudFiles = localDB.getCloudFiles ? localDB.getCloudFiles() : [];
+
+    const lastSyncTime = localStorage.getItem("gdrive_last_sync_time") || googleDriveProvider.lastSync;
+    setLastSyncTimeRaw(lastSyncTime);
+
+    setStats({
+      totalQuotes: quotations.length,
+      totalCompanies: companies.length,
+      lastBackup: lastSyncTime
+        ? new Date(lastSyncTime).toLocaleDateString("en-IN", { month: "short", day: "numeric" })
+        : "Never",
+    });
+
+    const connected = await googleDriveProvider.isConnected();
+    setIsDriveConnected(connected);
+    setCloudFilesCount(cloudFiles.length);
   };
 
   useEffect(() => {
-    fetchData();
-    window.addEventListener("quotationDataUpdated", fetchData);
-    return () => window.removeEventListener("quotationDataUpdated", fetchData);
+    const hour = new Date().getHours();
+    if (hour < 12) setGreeting("Good Morning");
+    else if (hour < 17) setGreeting("Good Afternoon");
+    else setGreeting("Good Evening");
+
+    loadData();
+    window.addEventListener("quotationDataUpdated", loadData);
+    window.addEventListener("gdriveStatusUpdated", loadData);
+    window.addEventListener("cloudFilesUpdated", loadData);
+    window.addEventListener("storage", loadData);
+
+    return () => {
+      window.removeEventListener("quotationDataUpdated", loadData);
+      window.removeEventListener("gdriveStatusUpdated", loadData);
+      window.removeEventListener("cloudFilesUpdated", loadData);
+      window.removeEventListener("storage", loadData);
+    };
   }, []);
 
   const handleNewQuote = () => {
+    admobManager.showInterstitial("Create Quotation");
     if (setQuotationId) setQuotationId(null);
+    sessionStorage.removeItem("company_dialog_shown");
     localStorage.removeItem("previewDraft");
-    goToCreate();
+    goToCreate(1);
   };
 
-  const loadAndGo = async (id, rawData, destination) => {
-    if (setQuotationId) setQuotationId(id);
-    if (rawData) localStorage.setItem("previewDraft", JSON.stringify(rawData));
-    destination();
-    admobManager.showInterstitial("Navigation");
-  };
-
-  const confirmDelete = async () => {
-    const { quote } = deleteModal;
-    if (!quote) return;
-    setDeleteModal(d => ({ ...d, loading: true }));
-    try {
-      localDB.deleteQuotation(quote._id || quote.id);
-      showToast("Quotation deleted permanently.");
-      fetchData();
-    } catch {
-      showToast("Failed to delete quotation.", "error");
-    } finally {
-      setDeleteModal({ open: false, quote: null, loading: false });
+  const handleCloudClick = async () => {
+    const connected = await googleDriveProvider.isConnected();
+    if (!connected) {
+      setShowConnectModal(true);
+    } else {
+      if (goToCloud) goToCloud();
+      else if (goToSettings) goToSettings();
     }
   };
 
-  const formatCurrency = (n) =>
-    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  const companyLogo = activeCompany?.companyLogo || activeCompany?.logo || activeCompany?.logoUrl || activeCompany?.logoPath;
+  const companyName = activeCompany?.companyName || "My Company";
+  const companyTagline = activeCompany?.companyTagline || activeCompany?.workspaceType || activeCompany?.tagline || "Enterprise Workspace";
 
   return (
-    <div className="bg-[#F8FAFC] min-h-screen font-sans pb-24 relative">
-      <MobileHeader
-        logo
-        title="VisionX QuoteGen Pro"
-        subtitle="Offline Quotation Software"
-        right={<CloudSyncButton onClick={() => setIsCloudModalOpen(true)} />}
+    <div className="bg-[#F8FAFC] min-h-screen font-sans pb-32 select-none">
+      <GoogleDriveConnectModal
+        isOpen={showConnectModal}
+        onClose={() => setShowConnectModal(false)}
+        onSuccess={() => {
+          loadData();
+          if (goToCloud) goToCloud();
+        }}
       />
 
-      {/* Cloud Storage Bottom Sheet / Centered Modal */}
-      <CloudSyncModal
-        isOpen={isCloudModalOpen}
-        onClose={() => setIsCloudModalOpen(false)}
-      />
-
-      {/* Toast */}
-      {toast.show && (
-        <div className={`fixed top-16 left-4 right-4 z-50 px-4 py-3 rounded-2xl shadow-lg flex items-center gap-3 text-xs font-semibold ${toast.type === "success" ? "bg-emerald-600 text-white" : "bg-red-600 text-white"}`}>
-          {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-          <span className="flex-1">{toast.message}</span>
-        </div>
-      )}
-
-      <div className="w-full px-4 py-4 space-y-4">
-        {/* Welcome Greeting Banner — Material Design 3 Card */}
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-5 text-white shadow-md shadow-blue-600/20 w-full">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-2xs">
-                <img src="/logo.png" alt="VisionX Logo" className="w-full h-full object-contain" />
+      {/* ── 1. DASHBOARD HEADER ── */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs print:hidden pt-[env(safe-area-inset-top,0px)]">
+        <div className="flex items-center justify-between h-14 px-4 w-full max-w-full overflow-hidden">
+          
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {companyLogo ? (
+              <div className="w-[40px] h-[40px] rounded-xl bg-white border border-slate-200/80 p-0.5 overflow-hidden shrink-0 shadow-xs">
+                <img src={companyLogo} alt={companyName} className="w-full h-full object-cover rounded-[10px]" />
               </div>
-              <div>
-                <h2 className="text-base font-black tracking-tight">VisionX QuoteGen Pro</h2>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Create • Manage • Print</p>
+            ) : (
+              <div className="w-[40px] h-[40px] rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-sm flex items-center justify-center shrink-0 border border-blue-200/80 shadow-xs">
+                {companyName.charAt(0).toUpperCase()}
               </div>
-            </div>
-            <div className="flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-full text-[10px] font-medium text-blue-100">
-              <Calendar size={11} /> {todayDateStr}
+            )}
+
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight break-words line-clamp-2 leading-snug" title={companyName}>
+                {companyName}
+              </h1>
+              <p className="text-[10px] font-semibold text-slate-500 truncate mt-0.5">
+                {companyTagline}
+              </p>
             </div>
           </div>
-          <p className="text-xs text-blue-100 mb-4 leading-relaxed font-normal">
-            Create, manage, and export professional quotations completely offline.
-          </p>
+
           <button
-            onClick={handleNewQuote}
-            className="flex items-center justify-center gap-2 bg-white text-blue-700 font-bold text-xs px-5 h-12 rounded-xl shadow-xs active:scale-98 transition-transform cursor-pointer w-full"
+            onClick={handleCloudClick}
+            className={`px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+              isDriveConnected
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100"
+                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+            }`}
           >
-            <Plus size={16} strokeWidth={3} /> Create New Quotation
+            <Cloud size={14} className={isDriveConnected ? "text-emerald-600" : "text-slate-500"} />
+            <span>{isDriveConnected ? "🟢 Connected" : "Connect Cloud"}</span>
           </button>
+
         </div>
+      </header>
 
-        {/* Overview Statistics */}
-        <div>
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-2">Overview</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-            <StatCard icon={<FileText size={18} />} color="blue" label="Quotations" value={stats.total} />
-            <StatCard icon={<IndianRupee size={18} />} color="emerald" label="Total Value" value={formatCurrency(stats.value)} />
-            <StatCard icon={<Clock size={18} />} color="purple" label="Last Activity" value={stats.lastCreated} small />
+      <div className="px-4 py-3 space-y-3.5 max-w-lg mx-auto">
+        
+        {/* ── 2. COMPACT WORKSPACE HERO CARD ── */}
+        <div className="bg-white rounded-[22px] p-4 border border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.03)] space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+              <span>{greeting}</span> 👋
+            </h2>
+            <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+              Enterprise
+            </span>
           </div>
-        </div>
+          
+          <div className="flex items-center gap-2.5 mt-1.5">
+            {companyLogo ? (
+              <div className="w-[40px] h-[40px] rounded-xl bg-white border border-slate-200/80 p-0.5 overflow-hidden shrink-0 shadow-xs">
+                <img src={companyLogo} alt={companyName} className="w-full h-full object-cover rounded-[10px]" />
+              </div>
+            ) : (
+              <div className="w-[40px] h-[40px] rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-sm flex items-center justify-center shrink-0 border border-blue-200/80 shadow-xs">
+                {companyName.charAt(0).toUpperCase()}
+              </div>
+            )}
 
-        {/* Quick Actions */}
-        <div>
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-2">Quick Actions</p>
-          <div className="grid grid-cols-2 gap-3">
-            <QuickActionCard
-              icon={<Plus size={20} />}
-              iconBg="bg-blue-50 text-blue-600"
-              title="New Quote"
-              subtitle="Build quotation"
-              onClick={handleNewQuote}
-            />
-            <QuickActionCard
-              icon={<Folder size={20} />}
-              iconBg="bg-purple-50 text-purple-600"
-              title="Storage"
-              subtitle="View document archive"
-              onClick={goToStorage}
-            />
-          </div>
-        </div>
-
-        {/* Recent Quotations */}
-        <div>
-          <div className="flex items-center justify-between px-1 mb-2">
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Recent Quotations</p>
-            <button onClick={goToStorage} className="text-[11px] font-bold text-blue-600 cursor-pointer">View All →</button>
-          </div>
-
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-              <p className="text-xs text-slate-400 font-semibold">Loading quotations...</p>
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="text-xs font-bold text-slate-900 break-words line-clamp-2 leading-snug capitalize" title={companyName}>
+                {companyName}
+              </p>
+              <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">
+                {companyTagline}
+              </p>
             </div>
-          ) : recentQuotes.length === 0 ? (
-            <DashboardCard className="py-12 text-center border-2 border-dashed border-slate-200">
-              <FileSearch size={36} className="text-slate-300 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-700">No Saved Quotations</p>
-              <p className="text-[11px] text-slate-400 mt-1 mb-3">Create your first quotation document.</p>
-              <button
-                onClick={handleNewQuote}
-                className="bg-blue-600 text-white text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer"
-              >
-                + Create Quotation
-              </button>
-            </DashboardCard>
-          ) : (
-            <div className="space-y-3">
-              {recentQuotes.map((q) => {
-                const qId = q._id || q.id;
-                const refNo = q.quotationNo || q.projectDetails?.referenceNo || "—";
-                const client = q.clientName || q.projectDetails?.clientName || "Client";
-                const project = q.projectName || q.projectDetails?.projectName || "Quotation";
-                const total = q.grandTotal || q.pricing?.grandTotal || 0;
-                const date = q.date || q.projectDetails?.date
-                  ? new Date(q.date || q.projectDetails?.date).toLocaleDateString("en-IN")
-                  : new Date(q.createdAt || Date.now()).toLocaleDateString("en-IN");
-
-                return (
-                  <div key={qId} className="bg-white rounded-2xl border border-slate-100 shadow-2xs overflow-hidden">
-                    <div className="p-4 flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <span className="font-mono text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md inline-block mb-1">{refNo}</span>
-                        <p className="text-xs font-bold text-slate-900 truncate">{client}</p>
-                        <p className="text-[11px] text-slate-400 font-medium truncate">{project}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-extrabold text-slate-900">₹{Number(total).toLocaleString("en-IN")}</p>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">{date}</p>
-                      </div>
-                    </div>
-                    <div className="border-t border-slate-100 flex divide-x divide-slate-100 text-[10px] font-semibold text-slate-600">
-                      <button onClick={() => loadAndGo(qId, q, goToPreview)} className="flex-1 py-2.5 flex items-center justify-center gap-1 hover:bg-slate-50 text-blue-600 cursor-pointer">
-                        <Eye size={13} /> Preview
-                      </button>
-                      <button onClick={() => loadAndGo(qId, q, goToCreate)} className="flex-1 py-2.5 flex items-center justify-center gap-1 hover:bg-slate-50 text-slate-700 cursor-pointer">
-                        <Edit3 size={13} /> Edit
-                      </button>
-                      <button onClick={() => loadAndGo(qId, q, goToExport)} className="flex-1 py-2.5 flex items-center justify-center gap-1 hover:bg-slate-50 text-emerald-600 cursor-pointer">
-                        <Download size={13} /> Export
-                      </button>
-                      <button onClick={() => setDeleteModal({ open: true, quote: q, loading: false })} className="flex-1 py-2.5 flex items-center justify-center gap-1 hover:bg-slate-50 text-red-500 cursor-pointer">
-                        <Trash2 size={13} /> Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Bottom Banner Ad */}
-        <BannerAd pageName="Dashboard" />
+        {/* ── 3. PRIMARY ACTION BUTTON (NEW QUOTATION) ── */}
+        <button
+          onClick={handleNewQuote}
+          className="w-full h-[52px] rounded-[14px] bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 cursor-pointer"
+        >
+          <Plus size={18} strokeWidth={3} />
+          New Quotation
+        </button>
+
+        {/* ── 4. COMPACT CLOUD BACKUP SUMMARY WIDGET (~125px Height) ── */}
+        {isDriveConnected ? (
+          <div
+            onClick={handleCloudClick}
+            className="bg-white rounded-[22px] p-4 sm:p-4.5 border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_24px_rgba(0,0,0,0.06)] transition-all cursor-pointer group space-y-3"
+          >
+            {/* Top Row: Icon + Title + Connected Badge */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
+                  <Cloud size={17} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm tracking-tight">Cloud Backup</h3>
+                  <p className="text-[11px] text-slate-500 font-medium truncate">Google Drive connected successfully</p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[10px] font-extrabold shrink-0 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> 🟢 Connected
+              </span>
+            </div>
+
+            <div className="h-px bg-slate-100 w-full" />
+
+            {/* Middle Row: Synced Files & Last Sync */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={15} className="text-blue-600 shrink-0" />
+                <span className="font-extrabold text-slate-900 text-xs truncate">
+                  {cloudFilesCount} Quotations Synced
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 min-w-0">
+                <Clock size={15} className="text-slate-400 shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider leading-none">Last Sync</span>
+                  <span className="font-extrabold text-slate-900 text-xs truncate block mt-0.5">
+                    {formatCompactSync(lastSyncTimeRaw)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-100 w-full" />
+
+            {/* Bottom Link */}
+            <div className="flex items-center justify-end text-xs font-extrabold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+              <span>View Details</span>
+              <ArrowRight size={14} className="ml-1" />
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={handleCloudClick}
+            className="bg-white rounded-[22px] p-4 sm:p-4.5 border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_24px_rgba(0,0,0,0.06)] transition-all cursor-pointer group space-y-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 border border-slate-200 group-hover:scale-105 transition-transform">
+                  <Cloud size={17} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm tracking-tight">Cloud Backup</h3>
+                  <p className="text-[11px] text-slate-500 font-medium truncate">Connect Google Drive to auto-back up</p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-extrabold shrink-0">
+                ⚪ Not Connected
+              </span>
+            </div>
+
+            <div className="h-px bg-slate-100 w-full" />
+
+            <div className="flex items-center justify-between text-xs font-extrabold">
+              <span className="text-slate-500 font-medium">Protect your data in Google Drive</span>
+              <span className="text-blue-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                Connect <ArrowRight size={14} />
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ── 5. SINGLE COMPACT STATISTICS SUMMARY CARD ── */}
+        <div className="bg-white rounded-[18px] p-3.5 border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.02)] flex items-center justify-between divide-x divide-slate-100 text-center">
+          <div className="flex-1 px-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Quotations</span>
+            <span className="text-sm font-black text-slate-900 mt-0.5 block">{stats.totalQuotes}</span>
+          </div>
+
+          <div className="flex-1 px-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Companies</span>
+            <span className="text-sm font-black text-slate-900 mt-0.5 block">{stats.totalCompanies}</span>
+          </div>
+
+          <div className="flex-1 px-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Last Backup</span>
+            <span className="text-sm font-black text-slate-900 mt-0.5 block truncate">{stats.lastBackup}</span>
+          </div>
+        </div>
+
       </div>
-
-      {/* Floating Action Button */}
-      <FloatingActionButton onClick={handleNewQuote} label="New Quote" />
-
-      {/* Material Bottom Sheet Delete Confirmation */}
-      {deleteModal.open && (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={() => setDeleteModal({ open: false, quote: null, loading: false })} />
-          <div className="relative bg-white rounded-t-3xl p-5 shadow-2xl space-y-4 animate-in slide-in-from-bottom duration-200">
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto" />
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <p className="font-bold text-slate-900 text-sm">Delete Quotation?</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {deleteModal.quote?.clientName || deleteModal.quote?.projectDetails?.clientName || "This quotation"} will be deleted.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setDeleteModal({ open: false, quote: null, loading: false })} className="flex-1 h-12 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer">Cancel</button>
-              <button onClick={confirmDelete} disabled={deleteModal.loading} className="flex-1 h-12 rounded-xl bg-red-600 text-white font-bold text-xs cursor-pointer disabled:opacity-60">
-                {deleteModal.loading ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

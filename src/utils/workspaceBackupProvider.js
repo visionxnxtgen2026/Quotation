@@ -227,7 +227,7 @@ class WorkspaceBackupProvider {
 
     const quotationsText = await zip.file("database/quotations.json").async("string");
     const profilesText = await zip.file("database/company_profiles.json").async("string");
-    
+
     let activeCompanyId = "";
     const activeIdFile = zip.file("database/active_company_id.txt");
     if (activeIdFile) activeCompanyId = await activeIdFile.async("string");
@@ -256,7 +256,10 @@ class WorkspaceBackupProvider {
       if (activeCompanyId) localStorage.setItem("quotegen_active_company_id", activeCompanyId);
       if (cloudFiles.length > 0) localStorage.setItem("quotegen_cloud_files", JSON.stringify(cloudFiles));
       if (cloudSettings) localStorage.setItem("quotegen_cloud_settings", JSON.stringify(cloudSettings));
-      if (appSettings?.draft) localStorage.setItem("previewDraft", JSON.stringify(appSettings.draft));
+      if (appSettings?.draft) {
+        if (localDB.saveDraft) localDB.saveDraft(appSettings.draft);
+        else localStorage.setItem("previewDraft", JSON.stringify(appSettings.draft));
+      }
       if (appSettings?.autoSaveDraft) localStorage.setItem("autoSaveDraftEnabled", appSettings.autoSaveDraft);
     } else {
       // MERGE MODE

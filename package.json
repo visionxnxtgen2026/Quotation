@@ -1,5 +1,5 @@
 {
-  "name": "visionx-quotegen-pro",
+  "name": "VisionX-quotegen-pro",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -13,6 +13,7 @@
     "@capacitor-community/admob": "^7.2.0",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.4.2",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/local-notifications": "^8.2.1",
@@ -20,6 +21,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
     "docx": "^9.7.1",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.43.0",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
@@ -31,6 +33,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.6.8",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",

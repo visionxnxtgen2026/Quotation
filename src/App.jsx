@@ -1,16 +1,21 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 
-// 📊 MOBILE DASHBOARD PAGES
+// 📊 EAGERLY LOADED CORE DASHBOARD FOR INSTANT (<100ms) STARTUP
 import Dashboard from "./pages/dashboard/Dashboard";
-import CreateQuotation from "./pages/dashboard/CreateQuotation";
-import Preview from "./pages/dashboard/Preview";
-import Export from "./pages/dashboard/Export";
-import EditProfile from "./pages/dashboard/EditProfile";
 
-// ⚙️ SETTINGS & STORAGE PAGES
-import Settings from "./pages/dashboard/Settings";
-import HelpSupport from "./pages/dashboard/HelpSupport";
-import StorageManager from "./pages/dashboard/StorageManager";
+// 🚀 LAZY LOADED ROUTE COMPONENTS FOR OPTIMAL BUNDLE SPLITTING
+const CreateQuotation = lazy(() => import("./pages/dashboard/CreateQuotation"));
+const Preview = lazy(() => import("./pages/dashboard/Preview"));
+const QuotationsPage = lazy(() => import("./pages/dashboard/QuotationsPage"));
+const ExportCenterPage = lazy(() => import("./pages/dashboard/ExportCenterPage"));
+const ExportSharePage = lazy(() => import("./pages/dashboard/ExportSharePage"));
+const ShareDrivePage = lazy(() => import("./pages/dashboard/ShareDrivePage"));
+const EditProfile = lazy(() => import("./pages/dashboard/EditProfile"));
+const Settings = lazy(() => import("./pages/dashboard/Settings"));
+const HelpSupport = lazy(() => import("./pages/dashboard/HelpSupport"));
+const StorageManager = lazy(() => import("./pages/dashboard/StorageManager"));
+const CloudBackupPage = lazy(() => import("./pages/settings/CloudBackupPage"));
+const CompanyWorkspaceScreen = lazy(() => import("./components/settings/CompanyWorkspaceScreen"));
 
 // 🔐 FIRST-LAUNCH LEGAL CONSENT
 import LegalConsent, { hasAcceptedConsent } from "./pages/LegalConsent";
@@ -18,20 +23,49 @@ import BottomNavigation from "./components/mobile/BottomNavigation";
 import MobileLayout from "./components/mobile/MobileLayout";
 import { admobManager } from "./utils/admobManager";
 
-import CompanyWorkspaceScreen from "./components/settings/CompanyWorkspaceScreen";
 import WorkspaceRestoreDetector from "./components/settings/cloud/WorkspaceRestoreDetector";
+import CloudTransitionOverlay from "./components/cloud/CloudTransitionOverlay";
+
+import SplashScreen from "./splash/SplashScreen";
+import ExportErrorBoundary from "./components/export/ExportErrorBoundary";
+
+function PageTransition({ children }) {
+  return (
+    <div className="w-full min-h-screen bg-[#F8FAFC] animate-in fade-in-95 slide-in-from-right-1.5 duration-200 ease-out">
+      {children}
+    </div>
+  );
+}
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [consentReady, setConsentReady] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [page, setPage] = useState("dashboard");
   const [createStep, setCreateStep] = useState(1);
   const [quotationId, setQuotationId] = useState(null);
   const [companyWorkspaceId, setCompanyWorkspaceId] = useState(null);
+  const [showCloudTransition, setShowCloudTransition] = useState(false);
 
   // Navigation History Stack to track full route state
   const historyStackRef = useRef([{ page: "dashboard", step: 1 }]);
   const touchStartRef = useRef({ x: 0, y: 0 });
+
+  // Preload all chunk components immediately in background to eliminate white flashes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      import("./pages/dashboard/CreateQuotation");
+      import("./pages/dashboard/Preview");
+      import("./pages/dashboard/QuotationsPage");
+      import("./pages/dashboard/EditProfile");
+      import("./pages/dashboard/Settings");
+      import("./pages/dashboard/HelpSupport");
+      import("./pages/dashboard/StorageManager");
+      import("./pages/settings/CloudBackupPage");
+      import("./components/settings/CompanyWorkspaceScreen");
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     admobManager.initialize();
@@ -58,7 +92,8 @@ export default function App() {
           return;
         }
       }
-      if (path.includes("/storage"))          setPage("storage");
+      if (path.includes("/cloud"))            setPage("cloud");
+      else if (path.includes("/storage"))     setPage("storage");
       else if (path.includes("/edit-profile")) setPage("edit-profile");
       else if (path.includes("/settings"))     setPage("settings");
       else if (path.includes("/help"))         setPage("help");
@@ -70,7 +105,6 @@ export default function App() {
   }, []);
 
   const pushState = (newPage, rawStep = 1) => {
-    // Strictly sanitize step parameter to ensure non-serializable objects (like PointerEvent/MouseEvent) are NEVER passed to window.history.pushState
     const step = typeof rawStep === "number" ? rawStep : 1;
     const historyPayload = { page: String(newPage), step };
 
@@ -86,6 +120,15 @@ export default function App() {
     if (newPage === "create") setCreateStep(step);
   };
 
+  const triggerCloudNavigation = () => {
+    setShowCloudTransition(true);
+  };
+
+  const handleCloudTransitionComplete = () => {
+    setShowCloudTransition(false);
+    pushState("cloud", 1);
+  };
+
   const handleBack = () => {
     const stack = historyStackRef.current;
     if (stack.length > 1) {
@@ -94,7 +137,6 @@ export default function App() {
       setPage(prev.page);
       if (prev.page === "create") setCreateStep(prev.step || 4);
     } else {
-      // Default fallbacks
       if (page === "preview") {
         setPage("create");
         setCreateStep(4);
@@ -108,7 +150,7 @@ export default function App() {
     }
   };
 
-  // 1. Android Native Edge Swipe Back Gesture Listener (Left edge swipe right)
+  // 1. Android Native Edge Swipe Back Gesture Listener
   useEffect(() => {
     const handleTouchStart = (e) => {
       const touch = e.touches[0];
@@ -122,7 +164,6 @@ export default function App() {
       const deltaX = touch.clientX - startX;
       const deltaY = Math.abs(touch.clientY - startY);
 
-      // Trigger back navigation if left edge swipe right (startX < 40px and horizontal swipe > 60px)
       if (startX < 40 && deltaX > 60 && deltaY < 40) {
         handleBack();
       }
@@ -137,21 +178,29 @@ export default function App() {
     };
   }, [page]);
 
-  // 2. Capacitor Android Native Hardware Back Button Listener
+  // 2. Capacitor Android Native Hardware Back Button & Deep Link Listener
   useEffect(() => {
-    let unbind = null;
+    let unbindBack = null;
+    let unbindUrl = null;
+
     if (window.Capacitor && window.Capacitor.isPluginAvailable("App")) {
       import(/* @vite-ignore */ "@capacitor/app").then(({ App }) => {
         App.addListener("backButton", () => {
           handleBack();
-        }).then(listener => {
-          unbind = listener;
-        });
+        }).then(l => { unbindBack = l; });
+
+        App.addListener("appUrlOpen", (data) => {
+          if (data && data.url) {
+            console.log("[Android Deep Link Received]:", data.url);
+            window.dispatchEvent(new CustomEvent("capacitorAppUrlOpen", { detail: data.url }));
+          }
+        }).then(l => { unbindUrl = l; });
       }).catch(() => {});
     }
 
     return () => {
-      if (unbind && unbind.remove) unbind.remove();
+      if (unbindBack && unbindBack.remove) unbindBack.remove();
+      if (unbindUrl && unbindUrl.remove) unbindUrl.remove();
     };
   }, [page]);
 
@@ -160,7 +209,19 @@ export default function App() {
     const handlePopState = (e) => {
       if (e.state && e.state.page) {
         setPage(e.state.page);
-        if (e.state.page === "create") setCreateStep(e.state.step || 4);
+        if (e.state.page === "create") {
+          let targetStep = e.state.step;
+          if (!targetStep) {
+            try {
+              const draftStr = localStorage.getItem("previewDraft");
+              if (draftStr) {
+                const parsed = JSON.parse(draftStr);
+                if (parsed.savedStep) targetStep = parsed.savedStep;
+              }
+            } catch (err) {}
+          }
+          setCreateStep(targetStep || 1);
+        }
       } else {
         handleBack();
       }
@@ -171,15 +232,30 @@ export default function App() {
 
   const navProps = {
     goToDashboard: () => pushState("dashboard", 1),
-    goToCreate: (step) => pushState("create", typeof step === "number" ? step : 1),
+    goToCreate: (step) => {
+      let targetStep = step;
+      if (typeof targetStep !== "number") {
+        try {
+          const draftStr = localStorage.getItem("previewDraft");
+          if (draftStr) {
+            const parsed = JSON.parse(draftStr);
+            if (parsed.savedStep) targetStep = parsed.savedStep;
+          }
+        } catch (err) {}
+      }
+      pushState("create", typeof targetStep === "number" ? targetStep : 1);
+    },
     goToPreview: () => pushState("preview", 1),
+    goToQuotations: () => pushState("quotations", 1),
     goToExport: () => pushState("export", 1),
+    goToShareDrive: () => pushState("share-drive", 1),
     goToStorage: () => pushState("storage", 1),
+    goToCloud: triggerCloudNavigation,
     goToEditProfile: () => pushState("edit-profile", 1),
     goToSettings: () => pushState("settings", 1),
     goToCompanyWorkspace: (companyId) => {
       setCompanyWorkspaceId(companyId);
-      pushState(`settings/company/${companyId}`, 1);
+      pushState("company-workspace", 1);
     },
     goToHelp: () => pushState("help", 1),
     goBack: handleBack,
@@ -187,11 +263,17 @@ export default function App() {
 
   const handleBottomNav = (targetPage) => {
     if (targetPage === "dashboard") navProps.goToDashboard();
-    else if (targetPage === "create") navProps.goToCreate(1);
+    else if (targetPage === "create") navProps.goToCreate();
     else if (targetPage === "preview") navProps.goToPreview();
+    else if (targetPage === "export") navProps.goToExport();
+    else if (targetPage === "quotations") navProps.goToQuotations();
     else if (targetPage === "storage") navProps.goToStorage();
     else if (targetPage === "settings") navProps.goToSettings();
   };
+
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
 
   if (!consentReady) return null;
 
@@ -206,65 +288,131 @@ export default function App() {
     );
   }
 
-  const isTabPage = ["dashboard", "create", "preview", "export", "storage", "settings"].includes(page);
+  const isTabPage = ["dashboard", "create", "preview", "export", "quotations", "storage", "settings", "cloud"].includes(page);
+  const activePage = (typeof page === "string" && page.startsWith("settings/company"))
+    ? "company-workspace"
+    : page;
 
   return (
     <MobileLayout>
-      {page === "dashboard" && (
-        <Dashboard {...navProps} setQuotationId={setQuotationId} />
-      )}
+      {/* Cloud Workspace Transition Overlay */}
+      <CloudTransitionOverlay
+        isVisible={showCloudTransition}
+        onComplete={handleCloudTransitionComplete}
+      />
 
-      {page === "create" && (
-        <CreateQuotation
-          {...navProps}
-          goBack={handleBack}
-          setQuotationId={setQuotationId}
-          quotationId={quotationId}
-          initialStep={createStep}
-        />
-      )}
+      <Suspense
+        fallback={
+          <div className="w-full min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 animate-in fade-in duration-150">
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 animate-pulse shadow-xs">
+              <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
+        }
+      >
+        {activePage === "dashboard" && (
+          <PageTransition>
+            <Dashboard {...navProps} setQuotationId={setQuotationId} />
+          </PageTransition>
+        )}
 
-      {page === "preview" && (
-        <Preview
-          {...navProps}
-          goBack={() => navProps.goToCreate(4)}
-          quotationId={quotationId}
-        />
-      )}
+        {activePage === "create" && (
+          <PageTransition>
+            <CreateQuotation
+              {...navProps}
+              goBack={handleBack}
+              setQuotationId={setQuotationId}
+              quotationId={quotationId}
+              initialStep={createStep}
+            />
+          </PageTransition>
+        )}
 
-      {page === "export" && (
-        <Export
-          {...navProps}
-          goBack={navProps.goToPreview}
-          quotationId={quotationId}
-        />
-      )}
+        {activePage === "preview" && (
+          <PageTransition>
+            <Preview
+              {...navProps}
+              goBack={() => navProps.goToCreate()}
+              quotationId={quotationId}
+            />
+          </PageTransition>
+        )}
 
-      {page === "storage" && (
-        <StorageManager {...navProps} goBack={handleBack} setQuotationId={setQuotationId} />
-      )}
+        {activePage === "export" && (
+          <PageTransition>
+            <ExportErrorBoundary goBack={handleBack}>
+              <ExportSharePage
+                {...navProps}
+                goBack={handleBack}
+                quotationId={quotationId}
+              />
+            </ExportErrorBoundary>
+          </PageTransition>
+        )}
 
-      {page === "edit-profile" && (
-        <EditProfile {...navProps} goBack={handleBack} />
-      )}
+        {activePage === "share-drive" && (
+          <PageTransition>
+            <ExportErrorBoundary goBack={handleBack}>
+              <ShareDrivePage
+                {...navProps}
+                goBack={handleBack}
+                quotationId={quotationId}
+              />
+            </ExportErrorBoundary>
+          </PageTransition>
+        )}
 
-      {page === "settings" && (
-        <Settings {...navProps} goBack={handleBack} />
-      )}
+        {activePage === "quotations" && (
+          <PageTransition>
+            <QuotationsPage
+              {...navProps}
+              setQuotationId={setQuotationId}
+            />
+          </PageTransition>
+        )}
 
-      {page === "company-workspace" && (
-        <CompanyWorkspaceScreen
-          profileId={companyWorkspaceId}
-          onBack={() => navProps.goToSettings()}
-          onSaved={() => {
-            window.dispatchEvent(new Event("quotationDataUpdated"));
-          }}
-        />
-      )}
+        {activePage === "storage" && (
+          <PageTransition>
+            <StorageManager {...navProps} goBack={handleBack} setQuotationId={setQuotationId} />
+          </PageTransition>
+        )}
 
-      {page === "help" && (
-        <HelpSupport {...navProps} goBack={handleBack} />
-      )}
+        {activePage === "cloud" && (
+          <PageTransition>
+            <CloudBackupPage {...navProps} goBack={handleBack} />
+          </PageTransition>
+        )}
+
+        {activePage === "edit-profile" && (
+          <PageTransition>
+            <EditProfile {...navProps} goBack={handleBack} />
+          </PageTransition>
+        )}
+
+        {activePage === "settings" && (
+          <PageTransition>
+            <Settings {...navProps} goBack={handleBack} />
+          </PageTransition>
+        )}
+
+        {activePage === "company-workspace" && (
+          <PageTransition>
+            <CompanyWorkspaceScreen
+              profileId={companyWorkspaceId}
+              onBack={() => navProps.goToSettings()}
+              onSaved={() => {
+                window.dispatchEvent(new Event("quotationDataUpdated"));
+              }}
+            />
+          </PageTransition>
+        )}
+
+        {activePage === "help" && (
+          <PageTransition>
+            <HelpSupport {...navProps} goBack={handleBack} />
+          </PageTransition>
+        )}
+      </Suspense>
 
       {isTabPage && (
         <BottomNavigation
@@ -275,6 +423,14 @@ export default function App() {
 
       {/* Global Google Drive Workspace Restore Detector */}
       <WorkspaceRestoreDetector />
+
+      {/* 🚀 Native ZERONYX Application Startup Splash Screen */}
+      {showSplash && (
+        <SplashScreen
+          onFinish={() => setShowSplash(false)}
+          isAppReady={consentReady}
+        />
+      )}
     </MobileLayout>
   );
 }

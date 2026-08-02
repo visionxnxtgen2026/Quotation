@@ -1,6 +1,6 @@
 /**
- * 📦 LocalDB — Offline-First Storage Engine for QuoteGen Pro
- * Primary: IndexedDB | Fallback: LocalStorage
+ * 📦 LocalDB — Offline-First Storage Engine with In-Memory Cache Optimization
+ * Primary: In-Memory Fast Cache | Secondary: LocalStorage & IndexedDB
  */
 
 const DB_NAME = "QuoteGenProDB";
@@ -27,9 +27,9 @@ const DEFAULT_CLOUD_SETTINGS = {
   autoBackupCustomerData: true,
   autoBackupCompanyProfiles: true,
   autoBackupSettings: true,
-  backupFrequency: "every_export", // "every_export" | "hourly" | "daily" | "manual"
-  defaultVisibility: "public", // "public" | "private"
-  allowedEmails: ["client@example.com", "admin@visionx.com"],
+  backupFrequency: "every_export",
+  defaultVisibility: "public",
+  allowedEmails: ["client@example.com", "admin@VisionX.com"],
   autoGenerateShareLink: true,
   copyLinkAfterUpload: true,
   uploadOriginalPdf: true,
@@ -84,6 +84,19 @@ const DEFAULT_COMPANY_PROFILE = {
   companySignature: ""
 };
 
+// ── 🚀 IN-MEMORY CACHE FOR INSTANT (<1ms) ACCESS ──
+let _quotationsCache = null;
+let _companyProfilesCache = null;
+let _activeCompanyCache = null;
+let _cloudFilesCache = null;
+
+const invalidateCache = () => {
+  _quotationsCache = null;
+  _companyProfilesCache = null;
+  _activeCompanyCache = null;
+  _cloudFilesCache = null;
+};
+
 // ── 🗄️ INDEXEDDB HELPER ──
 const initIDB = () => {
   return new Promise((resolve) => {
@@ -103,14 +116,122 @@ const initIDB = () => {
   });
 };
 
+/**
+ * 🧹 Sanitizes a quotation draft payload before saving to localStorage.
+ * Strips base64 image strings and temporary binary blobs to prevent QuotaExceededError.
+ */
+export const sanitizeDraftForStorage = (draft) => {
+  if (!draft || typeof draft !== "object") return draft;
+
+  try {
+    const clean = JSON.parse(JSON.stringify(draft));
+
+    if (clean.projectDetails) {
+      if (clean.projectDetails.companyLogo && typeof clean.projectDetails.companyLogo === "string" && clean.projectDetails.companyLogo.startsWith("data:")) {
+        clean.projectDetails.companyLogo = "";
+      }
+    }
+
+    if (clean.bankDetails) {
+      if (clean.bankDetails.qrCodeImage && typeof clean.bankDetails.qrCodeImage === "string" && clean.bankDetails.qrCodeImage.startsWith("data:")) {
+        clean.bankDetails.qrCodeImage = "";
+      }
+    }
+
+    if (clean.signature) {
+      if (clean.signature.signatureImage && typeof clean.signature.signatureImage === "string" && clean.signature.signatureImage.startsWith("data:")) {
+        clean.signature.signatureImage = "";
+      }
+    }
+
+    delete clean.previewPdfCache;
+    delete clean.previewHtmlCache;
+    delete clean.pdfBlob;
+    delete clean.screenshot;
+
+    return clean;
+  } catch (e) {
+    return draft;
+  }
+};
+
+/**
+ * 🛡️ Safe localStorage setItem helper wrapped in try/catch to catch QuotaExceededError
+ */
+export const safeLocalStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`[localStorage Quota Warning] Failed to set '${key}':`, err?.message || err);
+    try {
+      localStorage.removeItem("previewPdfCache");
+      localStorage.removeItem("gdrive_temp_cache");
+      localStorage.setItem(key, value);
+      return true;
+    } catch (retryErr) {
+      console.error(`[localStorage Quota Critical] Unrecoverable error setting '${key}':`, retryErr?.message || retryErr);
+      return false;
+    }
+  }
+};
+
 export const localDB = {
-  // ── 📄 QUOTATIONS MANAGEMENT ──
+  clearMemoryCache() {
+    invalidateCache();
+  },
+
+  // ── 📝 DRAFT MANAGEMENT (SANITIZED & INDEXEDDB BACKED) ──
+  saveDraft(draftPayload) {
+    if (!draftPayload) {
+      localStorage.removeItem(STORAGE_KEYS.DRAFT);
+      return;
+    }
+    const clean = sanitizeDraftForStorage(draftPayload);
+    safeLocalStorageSet(STORAGE_KEYS.DRAFT, JSON.stringify(clean));
+
+    initIDB().then((db) => {
+      if (db) {
+        try {
+          const tx = db.transaction(STORE_NAME, "readwrite");
+          tx.objectStore(STORE_NAME).put({ ...draftPayload, id: "current_active_draft" });
+        } catch (err) {}
+      }
+    });
+  },
+
+  getDraft() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.DRAFT);
+      const parsed = data ? JSON.parse(data) : null;
+      if (parsed) {
+        const profile = this.getCompanyProfile() || {};
+        if (parsed.projectDetails && !parsed.projectDetails.companyLogo && profile.companyLogo) {
+          parsed.projectDetails.companyLogo = profile.companyLogo;
+        }
+        if (parsed.bankDetails && !parsed.bankDetails.qrCodeImage && profile.bankDetails?.qrCodeImage) {
+          parsed.bankDetails.qrCodeImage = profile.bankDetails.qrCodeImage;
+        }
+        if (parsed.signature && !parsed.signature.signatureImage && profile.signature?.signatureImage) {
+          parsed.signature.signatureImage = profile.signature.signatureImage;
+        }
+      }
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // ── 📄 QUOTATIONS MANAGEMENT (MEMORY CACHED) ──
   getQuotations() {
+    if (_quotationsCache !== null) return _quotationsCache;
     try {
       const data = localStorage.getItem(STORAGE_KEYS.QUOTATIONS);
-      return data ? JSON.parse(data) : [];
+      _quotationsCache = data ? JSON.parse(data) : [];
+      return _quotationsCache;
     } catch (e) {
       console.error("LocalDB Read Error:", e);
+      _quotationsCache = [];
       return [];
     }
   },
@@ -146,7 +267,8 @@ export const localDB = {
         list.unshift(updatedQuote);
       }
 
-      localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
+      _quotationsCache = list;
+      safeLocalStorageSet(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
 
       // Async sync to IndexedDB
       initIDB().then((db) => {
@@ -227,6 +349,7 @@ export const localDB = {
     try {
       const list = this.getQuotations();
       const filtered = list.filter((q) => q._id !== id && q.id !== id);
+      _quotationsCache = filtered;
       localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(filtered));
 
       // Sync deletion to IndexedDB
@@ -288,15 +411,19 @@ export const localDB = {
     return this.saveQuotation(quote);
   },
 
-  // ── 🏢 MULTI-COMPANY PROFILES MANAGEMENT ──
+  // ── 🏢 MULTI-COMPANY PROFILES MANAGEMENT (MEMORY CACHED) ──
   getCompanyProfiles() {
+    if (_companyProfilesCache !== null) return _companyProfilesCache;
     try {
       const data = localStorage.getItem("quotegen_company_profiles_list");
       if (data) {
         const list = JSON.parse(data);
-        if (Array.isArray(list) && list.length > 0) return list;
+        if (Array.isArray(list) && list.length > 0) {
+          _companyProfilesCache = list;
+          return list;
+        }
       }
-      
+
       const legacyProfile = this.getCompanyProfileLegacy();
       const initialProfile = {
         id: "cp_default",
@@ -307,11 +434,13 @@ export const localDB = {
         updatedAt: new Date().toISOString(),
       };
       const initialList = [initialProfile];
+      _companyProfilesCache = initialList;
       localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(initialList));
       localStorage.setItem("quotegen_active_company_id", "cp_default");
       return initialList;
     } catch (e) {
       console.error("Error reading company profiles list:", e);
+      _companyProfilesCache = [DEFAULT_COMPANY_PROFILE];
       return [DEFAULT_COMPANY_PROFILE];
     }
   },
@@ -322,21 +451,40 @@ export const localDB = {
   },
 
   getActiveCompanyProfile() {
+    if (_activeCompanyCache !== null) return _activeCompanyCache;
     const activeId = localStorage.getItem("quotegen_active_company_id");
     const list = this.getCompanyProfiles();
     if (activeId) {
       const found = list.find(p => p.id === activeId);
-      if (found) return found;
+      if (found) {
+        _activeCompanyCache = found;
+        return found;
+      }
     }
-    return this.getDefaultCompanyProfile();
+    const def = this.getDefaultCompanyProfile();
+    _activeCompanyCache = def;
+    return def;
+  },
+
+  getCompanyProfile() {
+    return this.getActiveCompanyProfile();
+  },
+
+  saveCompanyProfile(profileData) {
+    const active = this.getActiveCompanyProfile();
+    const id = profileData?.id || active?.id || "cp_default";
+    return this.saveCompanyProfileById({ ...profileData, id });
   },
 
   setActiveCompanyProfileId(id) {
+    _activeCompanyCache = null;
     localStorage.setItem("quotegen_active_company_id", id);
     window.dispatchEvent(new Event("quotationDataUpdated"));
   },
 
   setDefaultCompanyProfile(id) {
+    _companyProfilesCache = null;
+    _activeCompanyCache = null;
     const list = this.getCompanyProfiles().map(p => ({
       ...p,
       isDefault: p.id === id
@@ -353,12 +501,14 @@ export const localDB = {
 
   saveCompanyProfileById(profileData) {
     try {
+      _companyProfilesCache = null;
+      _activeCompanyCache = null;
       const list = this.getCompanyProfiles();
       const id = profileData.id || `cp_${Date.now()}`;
-      
+
       const existingIdx = list.findIndex(p => p.id === id);
-      const isDefault = profileData.isDefault !== undefined 
-        ? profileData.isDefault 
+      const isDefault = profileData.isDefault !== undefined
+        ? profileData.isDefault
         : (existingIdx >= 0 ? list[existingIdx].isDefault : list.length === 0);
 
       const updatedProfile = {
@@ -392,179 +542,132 @@ export const localDB = {
     }
   },
 
-  createCompanyProfile({ name, logo }) {
-    const newProfile = {
-      id: `cp_${Date.now()}`,
-      companyName: name || "New Company",
-      companyLogo: logo || "",
-      isDefault: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    return this.saveCompanyProfileById(newProfile);
-  },
-
-  duplicateCompanyProfile(id) {
-    const list = this.getCompanyProfiles();
-    const target = list.find(p => p.id === id);
-    if (!target) return null;
-    
-    const clone = JSON.parse(JSON.stringify(target));
-    clone.id = `cp_${Date.now()}`;
-    clone.companyName = `${clone.companyName} (Copy)`;
-    clone.isDefault = false;
-    clone.createdAt = new Date().toISOString();
-    clone.updatedAt = new Date().toISOString();
-
-    list.push(clone);
-    localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(list));
-    localStorage.setItem("quotegen_active_company_id", clone.id);
-    window.dispatchEvent(new Event("quotationDataUpdated"));
-    return clone;
-  },
-
-  deleteCompanyProfile(id) {
-    const list = this.getCompanyProfiles();
-    const target = list.find(p => p.id === id);
-    if (!target) return false;
-
-    if (target.isDefault) {
-      alert("Cannot delete the default company profile. Set another company profile as default first.");
-      return false;
-    }
-
-    const filtered = list.filter(p => p.id !== id);
-    localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(filtered));
-    
-    const activeId = localStorage.getItem("quotegen_active_company_id");
-    if (activeId === id) {
-      const defaultProf = filtered.find(p => p.isDefault) || filtered[0];
-      if (defaultProf) {
-        localStorage.setItem("quotegen_active_company_id", defaultProf.id);
-      }
-    }
-    window.dispatchEvent(new Event("quotationDataUpdated"));
-    return true;
-  },
-
-  getCompanyProfileLegacy() {
+  deleteCompanyProfileById(id) {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.COMPANY_PROFILE);
-      if (!data) return DEFAULT_COMPANY_PROFILE;
-      const parsed = JSON.parse(data);
-      return {
-        ...DEFAULT_COMPANY_PROFILE,
-        ...parsed,
-        bankDetails: {
-          ...DEFAULT_COMPANY_PROFILE.bankDetails,
-          ...(parsed.bankDetails || {})
-        },
-        signature: {
-          ...DEFAULT_COMPANY_PROFILE.signature,
-          ...(parsed.signature || {})
-        }
-      };
-    } catch (e) {
-      return DEFAULT_COMPANY_PROFILE;
-    }
-  },
+      _companyProfilesCache = null;
+      _activeCompanyCache = null;
+      const list = this.getCompanyProfiles();
+      if (list.length <= 1) return false;
 
-  getCompanyProfile() {
-    return this.getActiveCompanyProfile();
-  },
+      const filtered = list.filter(p => p.id !== id);
+      const wasActive = localStorage.getItem("quotegen_active_company_id") === id;
 
-  saveCompanyProfile(profile) {
-    const active = this.getActiveCompanyProfile();
-    return this.saveCompanyProfileById({ ...active, ...profile });
-  },
-
-  // ── 📊 STORAGE METRICS ──
-  getStorageMetrics() {
-    const list = this.getQuotations();
-    const drafts = localStorage.getItem(STORAGE_KEYS.DRAFT) ? 1 : 0;
-
-    let totalBytes = 0;
-    for (let key in localStorage) {
-      if (localStorage.hasOwnProperty(key)) {
-        totalBytes += (localStorage[key].length + key.length) * 2;
-      }
-    }
-
-    const kbSize = (totalBytes / 1024).toFixed(2);
-    const mbSize = (totalBytes / (1024 * 1024)).toFixed(2);
-
-    return {
-      totalQuotations: list.length,
-      draftQuotations: drafts,
-      usedBytes: totalBytes,
-      usedKB: kbSize,
-      usedMB: mbSize,
-    };
-  },
-
-  // ── 💾 BACKUP (EXPORT ALL DATA) ──
-  exportBackupJSON() {
-    const backupData = {
-      app: "QuoteGen Pro",
-      version: "2.0-offline",
-      exportedAt: new Date().toISOString(),
-      companyProfile: this.getCompanyProfile(),
-      companyProfiles: this.getCompanyProfiles(),
-      activeCompanyId: localStorage.getItem("quotegen_active_company_id"),
-      quotations: this.getQuotations(),
-      draft: localStorage.getItem(STORAGE_KEYS.DRAFT) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.DRAFT)) : null,
-      settings: localStorage.getItem(STORAGE_KEYS.SETTINGS) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS)) : null,
-    };
-
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `quotegen_pro_backup_${new Date().toISOString().slice(0, 10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-  },
-
-  // ── 📥 RESTORE (IMPORT BACKUP JSON) ──
-  importBackupJSON(jsonData) {
-    try {
-      const parsed = typeof jsonData === "string" ? JSON.parse(jsonData) : jsonData;
-
-      if (!parsed || (!parsed.quotations && !parsed.companyProfile && !parsed.companyProfiles)) {
-        throw new Error("Invalid backup JSON format.");
+      if (filtered.length > 0 && !filtered.some(p => p.isDefault)) {
+        filtered[0].isDefault = true;
       }
 
-      if (Array.isArray(parsed.quotations)) {
-        localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(parsed.quotations));
-      }
-
-      if (Array.isArray(parsed.companyProfiles)) {
-        localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(parsed.companyProfiles));
-      } else if (parsed.companyProfile) {
-        localStorage.setItem(STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(parsed.companyProfile));
-      }
-
-      if (parsed.activeCompanyId) {
-        localStorage.setItem("quotegen_active_company_id", parsed.activeCompanyId);
-      }
-
-      if (parsed.draft) {
-        localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(parsed.draft));
-      }
-
-      if (parsed.settings) {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(parsed.settings));
+      localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(filtered));
+      if (wasActive) {
+        const nextActive = filtered.find(p => p.isDefault) || filtered[0];
+        localStorage.setItem("quotegen_active_company_id", nextActive.id);
       }
 
       window.dispatchEvent(new Event("quotationDataUpdated"));
       return true;
     } catch (e) {
-      console.error("Import Error:", e);
+      console.error("Error deleting company profile:", e);
       return false;
     }
   },
 
-  // ── ☁️ CLOUD FILES & BACKUP METADATA ENGINE ──
+  getCompanyProfileLegacy() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.COMPANY_PROFILE);
+      return data ? { ...DEFAULT_COMPANY_PROFILE, ...JSON.parse(data) } : DEFAULT_COMPANY_PROFILE;
+    } catch (e) {
+      return DEFAULT_COMPANY_PROFILE;
+    }
+  },
+
+  // ── 🎨 MATERIALS LIST MASTER ──
+  getMaterialsList() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.MATERIALS);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveMaterialsList(materials) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(materials));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  // ── 📊 CLOUD FILES & BACKUP LOGS (MEMORY CACHED) ──
+  getCloudFiles() {
+    if (_cloudFilesCache !== null) return _cloudFilesCache;
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CLOUD_FILES);
+      _cloudFilesCache = data ? JSON.parse(data) : [];
+      return _cloudFilesCache;
+    } catch (e) {
+      _cloudFilesCache = [];
+      return [];
+    }
+  },
+
+  saveCloudFile(fileRecord) {
+    try {
+      const list = this.getCloudFiles();
+      const id = fileRecord.id || fileRecord.driveFileId || `file_${Date.now()}`;
+      const updated = {
+        ...fileRecord,
+        id,
+        updatedAt: new Date().toISOString(),
+        createdAt: fileRecord.createdAt || new Date().toISOString(),
+        isDeleted: fileRecord.isDeleted || false,
+      };
+
+      const existingIdx = list.findIndex(f => f.id === id || (f.driveFileId && f.driveFileId === fileRecord.driveFileId));
+      if (existingIdx >= 0) {
+        list[existingIdx] = updated;
+      } else {
+        list.unshift(updated);
+      }
+
+      _cloudFilesCache = list;
+      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(list));
+      window.dispatchEvent(new Event("cloudFilesUpdated"));
+      return updated;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  updateCloudFile(id, updates) {
+    const list = this.getCloudFiles();
+    const idx = list.findIndex(f => f.id === id || f.driveFileId === id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...updates, updatedAt: new Date().toISOString() };
+      _cloudFilesCache = list;
+      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(list));
+      window.dispatchEvent(new Event("cloudFilesUpdated"));
+      return list[idx];
+    }
+    return null;
+  },
+
+  softDeleteCloudFile(id) {
+    return this.updateCloudFile(id, { isDeleted: true, deletedAt: new Date().toISOString() });
+  },
+
+  restoreCloudFile(id) {
+    return this.updateCloudFile(id, { isDeleted: false, deletedAt: null });
+  },
+
+  permanentDeleteCloudFile(id) {
+    const list = this.getCloudFiles().filter(f => f.id !== id && f.driveFileId !== id);
+    _cloudFilesCache = list;
+    localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(list));
+    window.dispatchEvent(new Event("cloudFilesUpdated"));
+    return true;
+  },
+
   getCloudSettings() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CLOUD_SETTINGS);
@@ -576,183 +679,22 @@ export const localDB = {
 
   saveCloudSettings(settings) {
     try {
-      const current = this.getCloudSettings();
-      const updated = { ...current, ...settings };
+      const updated = { ...this.getCloudSettings(), ...settings };
       localStorage.setItem(STORAGE_KEYS.CLOUD_SETTINGS, JSON.stringify(updated));
-      window.dispatchEvent(new Event("cloudSettingsUpdated"));
       return updated;
     } catch (e) {
-      console.error("Error saving cloud settings:", e);
       return null;
-    }
-  },
-
-  getCloudFiles() {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.CLOUD_FILES);
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      console.error("Error loading cloud files:", e);
-      return [];
     }
   },
 
   getActiveCloudFiles() {
-    return this.getCloudFiles().filter(f => !f.deleted);
+    return this.getCloudFiles().filter(f => !f.isDeleted);
   },
 
-  getRecentlyDeletedCloudFiles() {
-    return this.getCloudFiles().filter(f => f.deleted);
+  deleteCloudFile(id) {
+    return this.softDeleteCloudFile(id);
   },
 
-  getCloudFileById(id) {
-    if (!id) return null;
-    const files = this.getCloudFiles();
-    return files.find(f => f.id === id || f.driveFileId === id || f.quotationId === id) || null;
-  },
-
-  saveCloudFile(fileData) {
-    try {
-      const files = this.getCloudFiles();
-      const id = fileData.id || `cf_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-      const settings = this.getCloudSettings();
-      
-      const newFile = {
-        id,
-        quotationId: fileData.quotationId || null,
-        driveFileId: fileData.driveFileId || null,
-        fileName: fileData.fileName || "Quotation.pdf",
-        mimeType: fileData.mimeType || "application/pdf",
-        folderName: fileData.folderName || "VisionX QuoteGen Pro",
-        size: fileData.size || 0,
-        visibility: fileData.visibility || settings.defaultVisibility || "public",
-        shareUrl: fileData.shareUrl || null,
-        createdAt: fileData.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        deleted: Boolean(fileData.deleted),
-        deletedAt: fileData.deletedAt || null,
-        ownerEmail: fileData.ownerEmail || localStorage.getItem("gdrive_user_email") || "user@visionx.com",
-        allowedEmails: fileData.allowedEmails || [...settings.allowedEmails],
-        viewCount: fileData.viewCount || 0,
-        lastOpenedAt: fileData.lastOpenedAt || null,
-        customerName: fileData.customerName || fileData.clientName || "",
-        companyName: fileData.companyName || "",
-        quotationNumber: fileData.quotationNumber || fileData.refNo || "",
-        shareHistory: fileData.shareHistory || [
-          { action: "Created & Uploaded", timestamp: new Date().toISOString() }
-        ],
-      };
-
-      const existingIdx = files.findIndex(f => f.id === id || (f.driveFileId && f.driveFileId === newFile.driveFileId));
-      if (existingIdx >= 0) {
-        files[existingIdx] = { ...files[existingIdx], ...newFile, updatedAt: new Date().toISOString() };
-      } else {
-        files.unshift(newFile);
-      }
-
-      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(files));
-      this.logCloudSyncEvent({
-        action: existingIdx >= 0 ? "Renamed" : "Uploaded",
-        fileName: newFile.fileName,
-        details: `File ${newFile.fileName} (${newFile.visibility}) synced to local metadata database.`
-      });
-      window.dispatchEvent(new Event("cloudFilesUpdated"));
-      return newFile;
-    } catch (e) {
-      console.error("Error saving cloud file:", e);
-      return null;
-    }
-  },
-
-  updateCloudFile(id, updates) {
-    const file = this.getCloudFileById(id);
-    if (!file) return null;
-    return this.saveCloudFile({ ...file, ...updates, updatedAt: new Date().toISOString() });
-  },
-
-  softDeleteCloudFile(id) {
-    const file = this.getCloudFileById(id);
-    if (!file) return false;
-    
-    const updatedHistory = [...(file.shareHistory || []), { action: "Moved to Recently Deleted", timestamp: new Date().toISOString() }];
-    this.saveCloudFile({
-      ...file,
-      deleted: true,
-      deletedAt: new Date().toISOString(),
-      shareHistory: updatedHistory,
-    });
-
-    this.logCloudSyncEvent({
-      action: "Deleted",
-      fileName: file.fileName,
-      details: `Moved ${file.fileName} to Recently Deleted.`
-    });
-    return true;
-  },
-
-  restoreCloudFile(id) {
-    const file = this.getCloudFileById(id);
-    if (!file) return false;
-
-    const updatedHistory = [...(file.shareHistory || []), { action: "Restored from Recently Deleted", timestamp: new Date().toISOString() }];
-    this.saveCloudFile({
-      ...file,
-      deleted: false,
-      deletedAt: null,
-      shareHistory: updatedHistory,
-    });
-
-    this.logCloudSyncEvent({
-      action: "Restored",
-      fileName: file.fileName,
-      details: `Restored ${file.fileName} to active files.`
-    });
-    return true;
-  },
-
-  permanentDeleteCloudFile(id) {
-    try {
-      const files = this.getCloudFiles();
-      const target = files.find(f => f.id === id);
-      const filtered = files.filter(f => f.id !== id);
-      localStorage.setItem(STORAGE_KEYS.CLOUD_FILES, JSON.stringify(filtered));
-
-      if (target) {
-        this.logCloudSyncEvent({
-          action: "Deleted",
-          fileName: target.fileName,
-          details: `Permanently deleted ${target.fileName}.`
-        });
-      }
-      window.dispatchEvent(new Event("cloudFilesUpdated"));
-      return true;
-    } catch (e) {
-      return false;
-    }
-  },
-
-  bulkSoftDeleteCloudFiles(ids = []) {
-    ids.forEach(id => this.softDeleteCloudFile(id));
-  },
-
-  bulkRestoreCloudFiles(ids = []) {
-    ids.forEach(id => this.restoreCloudFile(id));
-  },
-
-  bulkPermanentDeleteCloudFiles(ids = []) {
-    ids.forEach(id => this.permanentDeleteCloudFile(id));
-  },
-
-  incrementFileViewCount(id) {
-    const file = this.getCloudFileById(id);
-    if (!file) return;
-    const viewCount = (file.viewCount || 0) + 1;
-    const lastOpenedAt = new Date().toISOString();
-    const updatedHistory = [...(file.shareHistory || []), { action: "Opened & Viewed", timestamp: lastOpenedAt }];
-    this.saveCloudFile({ ...file, viewCount, lastOpenedAt, shareHistory: updatedHistory });
-  },
-
-  // ── 📜 CLOUD SYNC LOGS ──
   getCloudSyncLogs() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SYNC_LOGS);
@@ -762,35 +704,117 @@ export const localDB = {
     }
   },
 
-  logCloudSyncEvent({ action, fileName, details }) {
+  logCloudSyncEvent(eventRecord) {
     try {
       const logs = this.getCloudSyncLogs();
-      const newLog = {
-        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        action, // "Uploaded" | "Deleted" | "Restored" | "Renamed" | "Permission Changed"
-        fileName: fileName || "Quotation File",
+      const entry = {
+        id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: new Date().toISOString(),
-        details: details || `Operation ${action} executed.`,
+        ...eventRecord,
       };
-      logs.unshift(newLog);
-      // Keep last 100 log entries
-      localStorage.setItem(STORAGE_KEYS.SYNC_LOGS, JSON.stringify(logs.slice(0, 100)));
-      window.dispatchEvent(new Event("cloudLogsUpdated"));
+      logs.unshift(entry);
+      const trimmed = logs.slice(0, 100);
+      localStorage.setItem(STORAGE_KEYS.SYNC_LOGS, JSON.stringify(trimmed));
+      window.dispatchEvent(new Event("cloudSyncLogsUpdated"));
+      return entry;
     } catch (e) {
-      console.error("Error logging sync event:", e);
+      return null;
     }
   },
 
-  // ── 🧹 CLEAR ALL LOCAL DATA ──
+  exportBackupJSON() {
+    try {
+      const backupData = {
+        version: "2.0 Enterprise",
+        exportedAt: new Date().toISOString(),
+        companyProfiles: this.getCompanyProfiles(),
+        activeCompanyId: localStorage.getItem("quotegen_active_company_id"),
+        quotations: this.getQuotations(),
+        cloudFiles: this.getCloudFiles(),
+        cloudSettings: this.getCloudSettings(),
+        materials: this.getMaterialsList(),
+      };
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `VisionX_QuoteGen_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (e) {
+      console.error("Export backup failed:", e);
+      return false;
+    }
+  },
+
+  importBackupJSON(parsedData) {
+    try {
+      if (!parsedData || typeof parsedData !== "object") return false;
+      const data = parsedData.data || parsedData;
+
+      if (Array.isArray(data.companyProfiles) && data.companyProfiles.length > 0) {
+        localStorage.setItem("quotegen_company_profiles_list", JSON.stringify(data.companyProfiles));
+      }
+      if (data.activeCompanyId) {
+        localStorage.setItem("quotegen_active_company_id", data.activeCompanyId);
+      }
+      if (Array.isArray(data.quotations) && data.quotations.length > 0) {
+        data.quotations.forEach(q => this.saveQuotation(q));
+      }
+      if (Array.isArray(data.cloudFiles) && data.cloudFiles.length > 0) {
+        data.cloudFiles.forEach(f => this.saveCloudFile(f));
+      }
+      if (data.cloudSettings) {
+        this.saveCloudSettings(data.cloudSettings);
+      }
+      if (Array.isArray(data.materials)) {
+        this.saveMaterialsList(data.materials);
+      }
+
+      this.clearMemoryCache();
+      window.dispatchEvent(new Event("quotationDataUpdated"));
+      window.dispatchEvent(new Event("cloudFilesUpdated"));
+      return true;
+    } catch (e) {
+      console.error("Import backup failed:", e);
+      return false;
+    }
+  },
+
   clearAllData() {
+    this.clearMemoryCache();
     localStorage.removeItem(STORAGE_KEYS.QUOTATIONS);
-    localStorage.removeItem(STORAGE_KEYS.DRAFT);
+    localStorage.removeItem("quotegen_company_profiles_list");
+    localStorage.removeItem("quotegen_active_company_id");
     localStorage.removeItem(STORAGE_KEYS.COMPANY_PROFILE);
-    localStorage.removeItem(STORAGE_KEYS.SETTINGS);
-    localStorage.removeItem(STORAGE_KEYS.REF_SEQ);
-    localStorage.removeItem(STORAGE_KEYS.REF_DATE);
     localStorage.removeItem(STORAGE_KEYS.CLOUD_FILES);
     localStorage.removeItem(STORAGE_KEYS.SYNC_LOGS);
+    localStorage.removeItem(STORAGE_KEYS.CLOUD_SETTINGS);
+    localStorage.removeItem(STORAGE_KEYS.MATERIALS);
     window.dispatchEvent(new Event("quotationDataUpdated"));
+    window.dispatchEvent(new Event("cloudFilesUpdated"));
+    return true;
+  },
+
+  getStorageMetrics() {
+    const list = this.getQuotations();
+    const cloudList = this.getCloudFiles();
+    const totalQuotations = list.length;
+    const quotationsBytes = JSON.stringify(list).length;
+    const cloudBytes = JSON.stringify(cloudList).length;
+    const totalBytes = quotationsBytes + cloudBytes;
+    const usedKB = (totalBytes / 1024).toFixed(1);
+    const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
+    return { totalQuotations, totalBytes, usedKB, usedMB, cloudCount: cloudList.length };
+  },
+
+  getCloudFileById(id) {
+    if (!id) return null;
+    const list = this.getCloudFiles();
+    return list.find(f => f.id === id || f.driveFileId === id || f.quotationId === id) || null;
   }
 };

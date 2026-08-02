@@ -13,10 +13,10 @@ import { localDB } from "../../utils/localDB";
 import { triggerAutoSync } from "../../utils/googleDriveProvider";
 
 const STEPS = [
-  { key: "project",   title: "Details" },
+  { key: "project", title: "Details" },
   { key: "materials", title: "Rates" },
-  { key: "terms",     title: "Terms" },
-  { key: "preview",   title: "Review" },
+  { key: "terms", title: "Terms" },
+  { key: "preview", title: "Review" },
 ];
 
 /**
@@ -29,7 +29,26 @@ export default function CreateQuotation({
   goBack, goToPreview, goToExport, goToDashboard, goToSettings,
   setQuotationId, quotationId, initialStep = 1
 }) {
-  const [currentStep, setCurrentStep] = useState(initialStep || 1);
+  const [currentStep, setCurrentStep] = useState(() => {
+    if (typeof initialStep === "number" && initialStep >= 1 && initialStep <= 4) {
+      return initialStep;
+    }
+    try {
+      const savedDraft = localStorage.getItem("previewDraft");
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed.savedStep) return parsed.savedStep;
+      }
+    } catch (e) {}
+    return 1;
+  });
+
+  useEffect(() => {
+    if (typeof initialStep === "number" && initialStep >= 1 && initialStep <= 4) {
+      setCurrentStep(initialStep);
+    }
+  }, [initialStep]);
+
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [showCompanyDefaultsDialog, setShowCompanyDefaultsDialog] = useState(false);
   const [useCompanyDefaultsToggle, setUseCompanyDefaultsToggle] = useState(true);
@@ -298,6 +317,16 @@ export default function CreateQuotation({
   };
 
   const [formData, setFormData] = useState(() => {
+    if (!quotationId) {
+      const parsed = localDB.getDraft ? localDB.getDraft() : null;
+      if (parsed && hasMeaningfulUserData(parsed)) {
+        if (parsed.rateTable && !parsed.rateSections) {
+          parsed.rateSections = [{ id: Date.now(), title: "Material & Labour Rates", workingArea: "", rows: parsed.rateTable }];
+          delete parsed.rateTable;
+        }
+        return parsed;
+      }
+    }
     const fresh = { ...defaultInitialState, projectDetails: { ...defaultInitialState.projectDetails, referenceNo: generateReferenceNo() } };
     return applyCompanyDefaults(fresh);
   });
@@ -312,14 +341,16 @@ export default function CreateQuotation({
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [showResetSheet, setShowResetSheet] = useState(false);
 
-  // Check on Mount if Company Profile Settings exist -> Trigger Confirmation Dialog
+  // Check on Mount if Company Profile Settings exist -> Trigger Confirmation Dialog ONLY for brand-new unitialized drafts
   useEffect(() => {
     if (quotationId) return;
     const profile = localDB.getCompanyProfile();
     const hasCompanySettings = profile && (profile.companyName || profile.companyAddress || profile.companyEmail);
     const savedDraft = localStorage.getItem("previewDraft");
+    const isAlreadyInitialized = sessionStorage.getItem("company_dialog_shown") === "true";
+    const userEnteredData = hasMeaningfulUserData(formData);
 
-    if (hasCompanySettings && !savedDraft) {
+    if (hasCompanySettings && !savedDraft && !isAlreadyInitialized && !userEnteredData) {
       setShowCompanyDefaultsDialog(true);
     }
   }, [quotationId]);
@@ -333,39 +364,30 @@ export default function CreateQuotation({
         if (existing.useCompanyProfileDefaults !== undefined) {
           setUseCompanyDefaultsToggle(existing.useCompanyProfileDefaults);
         }
+        if (existing.savedStep && typeof existing.savedStep === "number") {
+          setCurrentStep(existing.savedStep);
+        }
         setIsSaved(true);
       }
     }
   }, [quotationId]);
 
-  // Detect Unfinished Draft on Component Mount
+  // Detect Unfinished Draft on Component Mount & Hydrate Seamlessly
   useEffect(() => {
     if (quotationId) return;
 
     const isAutoSaveEnabled = localStorage.getItem("autoSaveDraftEnabled") !== "false";
     if (!isAutoSaveEnabled) return;
 
-    const savedDraft = localStorage.getItem("previewDraft");
-    if (savedDraft) {
-      try {
-        const parsed = JSON.parse(savedDraft);
-        if (hasMeaningfulUserData(parsed)) {
-          if (parsed.rateTable && !parsed.rateSections) {
-            parsed.rateSections = [{ id: Date.now(), title: "Material & Labour Rates", workingArea: "", rows: parsed.rateTable }];
-            delete parsed.rateTable;
-          }
-          setPendingDraft(parsed);
-          setShowDraftModal(true);
-        } else {
-          localStorage.removeItem("previewDraft");
-          localStorage.removeItem("quotegen_draft");
-          localStorage.removeItem("draft");
-        }
-      } catch (e) {
-        console.error("Error reading saved draft:", e);
-        localStorage.removeItem("previewDraft");
-        localStorage.removeItem("quotegen_draft");
-        localStorage.removeItem("draft");
+    const parsed = localDB.getDraft ? localDB.getDraft() : null;
+    if (parsed && hasMeaningfulUserData(parsed)) {
+      if (parsed.rateTable && !parsed.rateSections) {
+        parsed.rateSections = [{ id: Date.now(), title: "Material & Labour Rates", workingArea: "", rows: parsed.rateTable }];
+        delete parsed.rateTable;
+      }
+      setFormData(parsed);
+      if (parsed.savedStep && typeof parsed.savedStep === "number") {
+        setCurrentStep(parsed.savedStep);
       }
     }
   }, [quotationId]);
@@ -383,12 +405,20 @@ export default function CreateQuotation({
           savedStep: currentStep,
           updatedAt: new Date().toISOString(),
         };
-        localStorage.setItem("previewDraft", JSON.stringify(draftPayload));
+        if (localDB.saveDraft) {
+          localDB.saveDraft(draftPayload);
+        } else {
+          localStorage.setItem("previewDraft", JSON.stringify(draftPayload));
+        }
         window.dispatchEvent(new Event("quotationDataUpdated"));
         setDraftSavedStatus(true);
         setTimeout(() => setDraftSavedStatus(false), 2500);
       } else {
-        localStorage.removeItem("previewDraft");
+        if (localDB.saveDraft) {
+          localDB.saveDraft(null);
+        } else {
+          localStorage.removeItem("previewDraft");
+        }
         localStorage.removeItem("quotegen_draft");
         localStorage.removeItem("draft");
         window.dispatchEvent(new Event("quotationDataUpdated"));
@@ -416,7 +446,8 @@ export default function CreateQuotation({
    */
   const handleDiscardDraft = () => {
     isDraftDiscardedRef.current = true;
-    
+    sessionStorage.removeItem("company_dialog_shown");
+
     // 1. Purge all possible draft storage keys
     localStorage.removeItem("previewDraft");
     localStorage.removeItem("quotegen_draft");
@@ -510,7 +541,7 @@ export default function CreateQuotation({
 
         const updatedRows = (sec.rows || []).map(r => {
           if (r.id !== itemId) return r;
-          
+
           const updatedRow = { ...r };
           if (field === "work" || field === "desc" || field === "description") {
             updatedRow.work = val;
@@ -767,7 +798,11 @@ export default function CreateQuotation({
       payload.quotationNo = currentRef;
 
       localDB.saveQuotation(payload);
-      localStorage.setItem("previewDraft", JSON.stringify(payload));
+      if (localDB.saveDraft) {
+        localDB.saveDraft(payload);
+      } else {
+        localStorage.setItem("previewDraft", JSON.stringify(payload));
+      }
       window.dispatchEvent(new Event("quotationDataUpdated"));
       triggerAutoSync("save", payload);
       setIsSaved(true);
@@ -786,11 +821,21 @@ export default function CreateQuotation({
   };
 
   const handlePreviewClick = () => {
-    if (!validateForm()) return;
-    const saved = handleSave();
-    if (saved) {
-      goToPreview();
+    if (!isDraftDiscardedRef.current && hasMeaningfulUserData(formData)) {
+      const draftPayload = {
+        ...buildPayload(),
+        useCompanyProfileDefaults: useCompanyDefaultsToggle,
+        savedStep: currentStep,
+        updatedAt: new Date().toISOString(),
+      };
+      if (localDB.saveDraft) {
+        localDB.saveDraft(draftPayload);
+      } else {
+        localStorage.setItem("previewDraft", JSON.stringify(draftPayload));
+      }
+      window.dispatchEvent(new Event("quotationDataUpdated"));
     }
+    goToPreview();
   };
 
   const handleNextStepClick = () => {
@@ -802,7 +847,7 @@ export default function CreateQuotation({
 
   return (
     <div className="bg-[#F8FAFC] min-h-screen font-sans pb-36 text-slate-900 selection:bg-blue-500 selection:text-white">
-      
+
       {/* 📌 STICKY TOP HEADER */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-2xs print:hidden pt-[env(safe-area-inset-top,0px)]">
         <div className="flex items-center justify-between h-16 px-4 max-w-4xl mx-auto w-full select-none gap-2">
@@ -837,7 +882,7 @@ export default function CreateQuotation({
             >
               <RotateCcw size={16} />
             </button>
-            
+
             <button
               onClick={handlePreviewClick}
               className="px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100/80 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all border border-blue-200/60 active:scale-95"
@@ -864,9 +909,8 @@ export default function CreateQuotation({
 
       {/* 🔔 FLOATING TOAST NOTIFICATION */}
       {toast.show && (
-        <div className={`fixed top-28 left-4 right-4 max-w-md mx-auto z-[100] px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200 ${
-          toast.type === "success" ? "bg-slate-900 text-white border border-slate-800" : "bg-red-600 text-white"
-        }`}>
+        <div className={`fixed top-28 left-4 right-4 max-w-md mx-auto z-[100] px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200 ${toast.type === "success" ? "bg-slate-900 text-white border border-slate-800" : "bg-red-600 text-white"
+          }`}>
           {toast.type === "success" ? <CheckCircle2 size={18} className="text-emerald-400 shrink-0" /> : <AlertCircle size={18} className="shrink-0" />}
           <span className="flex-1">{toast.message}</span>
         </div>
@@ -880,16 +924,15 @@ export default function CreateQuotation({
            ====================================================== */}
         {currentStep === 1 && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            
+
             {/* 🌟 COMPACT COMPANY PROFILE SUMMARY CARD (WHEN TOGGLE IS ON) */}
             <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border font-extrabold ${
-                    useCompanyDefaultsToggle
-                      ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                      : "bg-slate-100 text-slate-500 border-slate-200"
-                  }`}>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border font-extrabold ${useCompanyDefaultsToggle
+                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                    : "bg-slate-100 text-slate-500 border-slate-200"
+                    }`}>
                     {useCompanyDefaultsToggle ? <CheckCircle2 size={20} /> : <Sparkles size={20} />}
                   </div>
                   <div>
@@ -904,32 +947,30 @@ export default function CreateQuotation({
                 <button
                   type="button"
                   onClick={() => handleCompanyDefaultsToggle(!useCompanyDefaultsToggle)}
-                  className={`w-12 h-7 rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
-                    useCompanyDefaultsToggle ? "bg-blue-600" : "bg-slate-300"
-                  }`}
+                  className={`w-12 h-7 rounded-full p-1 transition-colors cursor-pointer shrink-0 ${useCompanyDefaultsToggle ? "bg-blue-600" : "bg-slate-300"
+                    }`}
                 >
-                  <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
-                    useCompanyDefaultsToggle ? "translate-x-5" : "translate-x-0"
-                  }`} />
+                  <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${useCompanyDefaultsToggle ? "translate-x-5" : "translate-x-0"
+                    }`} />
                 </button>
               </div>
 
               {/* Active Company Workspace Indicator Bar (Always Visible) */}
               <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
                     {activeCompanyProfile.companyLogo ? (
-                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 overflow-hidden shadow-2xs">
+                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 p-0.5 overflow-hidden shadow-2xs shrink-0">
                         <img src={activeCompanyProfile.companyLogo} alt="Logo" className="w-full h-full object-contain" />
                       </div>
                     ) : (
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm border border-blue-100">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm border border-blue-100 shrink-0">
                         {activeCompanyProfile.companyName ? activeCompanyProfile.companyName.charAt(0) : "V"}
                       </div>
                     )}
-                    <div>
-                      <h5 className="text-xs font-black text-slate-900">{activeCompanyProfile.companyName || "Saved Company Profile"}</h5>
-                      <p className="text-[11px] text-slate-500 font-medium">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <h5 className="text-xs font-black text-slate-900 break-words line-clamp-2 leading-snug">{activeCompanyProfile.companyName || "Saved Company Profile"}</h5>
+                      <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
                         {activeCompanyProfile.companyPhone ? `Contact: ${activeCompanyProfile.companyPhone}` : "Company Contact Loaded"}
                         {activeCompanyProfile.companyEmail ? ` • ${activeCompanyProfile.companyEmail}` : ""}
                       </p>
@@ -1379,7 +1420,7 @@ export default function CreateQuotation({
            ====================================================== */}
         {currentStep === 3 && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            
+
             {/* Compact Terms Summary Indicator (When Company Profile Toggle is ON) */}
             {useCompanyDefaultsToggle && (
               <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex items-center justify-between gap-4">
@@ -1416,11 +1457,10 @@ export default function CreateQuotation({
                     {/* Header Validation Bar */}
                     <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200/90 rounded-2xl">
                       <span className="text-xs font-bold text-slate-700">Total Milestone Split</span>
-                      <div className={`px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 ${
-                        paymentTermsTotalPercent === 100
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                          : "bg-amber-100 text-amber-900 border border-amber-200"
-                      }`}>
+                      <div className={`px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 ${paymentTermsTotalPercent === 100
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        : "bg-amber-100 text-amber-900 border border-amber-200"
+                        }`}>
                         {paymentTermsTotalPercent === 100 ? (
                           <>
                             <Check size={14} /> Total: 100% (Validated)
@@ -1716,7 +1756,10 @@ export default function CreateQuotation({
       {/* 🪄 COMPANY DEFAULTS DIALOG */}
       {showCompanyDefaultsDialog && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={() => setShowCompanyDefaultsDialog(false)} />
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={() => {
+            sessionStorage.setItem("company_dialog_shown", "true");
+            setShowCompanyDefaultsDialog(false);
+          }} />
           <div className="relative bg-white rounded-3xl p-6 shadow-2xl space-y-4 max-w-sm w-full animate-in zoom-in-95 duration-200">
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center font-bold">
               <Sparkles size={24} />
@@ -1731,6 +1774,7 @@ export default function CreateQuotation({
               <button
                 onClick={() => {
                   handleCompanyDefaultsToggle(false);
+                  sessionStorage.setItem("company_dialog_shown", "true");
                   setShowCompanyDefaultsDialog(false);
                 }}
                 className="flex-1 h-12 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer active:bg-slate-50"
@@ -1740,6 +1784,7 @@ export default function CreateQuotation({
               <button
                 onClick={() => {
                   handleCompanyDefaultsToggle(true);
+                  sessionStorage.setItem("company_dialog_shown", "true");
                   setShowCompanyDefaultsDialog(false);
                 }}
                 className="flex-1 h-12 rounded-xl bg-blue-600 text-white font-bold text-xs cursor-pointer shadow-md shadow-blue-600/20 active:scale-98 transition-transform"
@@ -1891,13 +1936,12 @@ function FormInput({
           placeholder={placeholder}
           readOnly={readOnly}
           disabled={disabled || readOnly}
-          className={`w-full h-14 bg-slate-50/70 border rounded-2xl px-4 text-xs font-semibold text-slate-900 focus:outline-none transition-all ${
-            error
-              ? "border-red-500 bg-red-50/20 text-red-900 focus:border-red-600 focus:ring-4 focus:ring-red-500/10"
-              : readOnly
+          className={`w-full h-14 bg-slate-50/70 border rounded-2xl px-4 text-xs font-semibold text-slate-900 focus:outline-none transition-all ${error
+            ? "border-red-500 bg-red-50/20 text-red-900 focus:border-red-600 focus:ring-4 focus:ring-red-500/10"
+            : readOnly
               ? "bg-slate-100/90 border-slate-200 cursor-not-allowed font-mono text-slate-700 font-bold"
               : "border-slate-200/90 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-          } ${rightAction ? "pr-12" : ""}`}
+            } ${rightAction ? "pr-12" : ""}`}
         />
         {rightAction && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -1951,13 +1995,12 @@ function FormTextarea({
         placeholder={placeholder}
         readOnly={readOnly}
         disabled={disabled || readOnly}
-        className={`w-full bg-slate-50/70 border rounded-2xl p-4 text-xs font-medium text-slate-900 focus:outline-none transition-all resize-y min-h-[140px] leading-relaxed ${
-          error
-            ? "border-red-500 bg-red-50/20 text-red-900 focus:border-red-600 focus:ring-4 focus:ring-red-500/10"
-            : readOnly
+        className={`w-full bg-slate-50/70 border rounded-2xl p-4 text-xs font-medium text-slate-900 focus:outline-none transition-all resize-y min-h-[140px] leading-relaxed ${error
+          ? "border-red-500 bg-red-50/20 text-red-900 focus:border-red-600 focus:ring-4 focus:ring-red-500/10"
+          : readOnly
             ? "bg-slate-100/90 border-slate-200 cursor-not-allowed font-mono text-slate-700 font-bold"
             : "border-slate-200/90 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-        }`}
+          }`}
       />
       {error && (
         <p className="text-[11px] text-red-500 font-semibold mt-1 flex items-center gap-1">

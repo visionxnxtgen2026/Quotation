@@ -7,17 +7,42 @@ import { localDB } from "../../utils/localDB";
 import { triggerAutoSync } from "../../utils/googleDriveProvider";
 import {
   Building2, Landmark, FileCheck, FileText, Cloud, Settings2, CheckCircle2, Save,
-  ArrowLeft, Star, Image as ImageIcon, Plus, Trash2, IndianRupee, ShieldCheck
+  ArrowLeft, Star, Image as ImageIcon, Plus, Trash2, IndianRupee, ShieldCheck,
+  Search, ChevronDown, Check, Sparkles, RefreshCcw, Lock, Key, Shield
 } from "lucide-react";
 
+const SUPPORTED_CURRENCIES = [
+  { flag: "🇺🇸", name: "US Dollar", code: "USD", symbol: "$" },
+  { flag: "🇪🇺", name: "Euro", code: "EUR", symbol: "€" },
+  { flag: "🇮🇳", name: "Indian Rupee", code: "INR", symbol: "₹" },
+  { flag: "🇬🇧", name: "British Pound", code: "GBP", symbol: "£" },
+  { flag: "🇯🇵", name: "Japanese Yen", code: "JPY", symbol: "¥" },
+  { flag: "🇨🇳", name: "Chinese Yuan", code: "CNY", symbol: "¥" },
+  { flag: "🇨🇦", name: "Canadian Dollar", code: "CAD", symbol: "$" },
+  { flag: "🇦🇺", name: "Australian Dollar", code: "AUD", symbol: "$" },
+  { flag: "🇸🇬", name: "Singapore Dollar", code: "SGD", symbol: "$" },
+  { flag: "🇦🇪", name: "UAE Dirham", code: "AED", symbol: "AED" },
+];
+
+const getActiveCurrencyObj = (curVal) => {
+  if (!curVal) return SUPPORTED_CURRENCIES[2]; // Default INR
+  const upper = String(curVal).toUpperCase();
+  const match = SUPPORTED_CURRENCIES.find(c =>
+    upper.includes(c.code) || upper.includes(c.name.toUpperCase())
+  );
+  return match || SUPPORTED_CURRENCIES[2];
+};
+
 /**
- * 🏢 CompanyWorkspaceScreen Component
- * Independent workspace management view for a specific company profile.
+ * 🏢 CompanyWorkspaceScreen Component — Consolidated Enterprise ERP Profile
+ * Manages all 5 core company configuration modules under a single screen.
  */
 export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState("all"); // "all" | "info" | "bank" | "signature" | "templates" | "cloud" | "preferences"
-  
+  const [activeTab, setActiveTab] = useState("all"); // "all" | "info" | "bank" | "tax" | "pdf" | "security"
+  const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
+  const [currencySearchQuery, setCurrencySearchQuery] = useState("");
+
   const [profile, setProfile] = useState(() => {
     const list = localDB.getCompanyProfiles();
     return list.find(p => p.id === profileId) || localDB.getActiveCompanyProfile();
@@ -38,7 +63,10 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
     pincode: profile?.pincode || "",
     country: profile?.country || "India",
     gstNo: profile?.gstNo || "",
-    
+    panNo: profile?.panNo || "",
+    businessType: profile?.businessType || "Private Limited",
+    timeZone: profile?.timeZone || "Asia/Kolkata (GMT+5:30)",
+
     // Banking
     bankName: profile?.bankDetails?.bankName || "",
     accountHolder: profile?.bankDetails?.accountHolder || "",
@@ -46,7 +74,26 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
     ifscCode: profile?.bankDetails?.ifscCode || "",
     branch: profile?.branch || profile?.bankDetails?.branch || "",
     upiId: profile?.bankDetails?.upiId || "",
-    
+    qrCodeImage: profile?.bankDetails?.qrCodeImage || "",
+
+    // Tax & Billing
+    taxPercentage: profile?.taxPercentage || "18",
+    hsnCode: profile?.hsnCode || "998311",
+    invoicePrefix: profile?.invoicePrefix || "INV-",
+    quotationPrefix: profile?.quotationPrefix || "QTN-",
+    numberFormat: profile?.numberFormat || "QTN-2026-0001",
+    autoNumbering: profile?.autoNumbering !== false,
+
+    // PDF & Documents
+    paperSize: profile?.paperSize || "A4",
+    pageMargins: profile?.pageMargins || "Standard (10mm)",
+    headerText: profile?.headerText || "",
+    footerText: profile?.footerText || "Thank you for doing business with us.",
+    defaultFilename: profile?.defaultFilename || "Quotation_<Number>",
+    showPageNumbers: profile?.showPageNumbers !== false,
+    companyWatermark: profile?.companyWatermark || "",
+    pdfQuality: profile?.pdfQuality || "High (300 DPI)",
+
     // Signature
     signatoryName: profile?.signature?.name || "",
     designation: profile?.signature?.designation || "",
@@ -54,21 +101,12 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
     signatoryEmail: profile?.signature?.email || "",
     signatureImage: profile?.signature?.signatureImage || profile?.companySignature || "",
 
-    // Templates
-    coverLetterSubject: profile?.coverLetterSubject || "Quotation for Painting Work",
-    coverLetterBody: profile?.coverLetterBody || "",
-    defaultDiscount: profile?.defaultDiscount !== undefined ? profile?.defaultDiscount : "0",
-    defaultValidity: profile?.defaultValidity || "30 Days from issue date",
-    defaultWarranty: profile?.defaultWarranty || "3 Years Warranty",
-    defaultPaintBrand: profile?.defaultPaintBrand || "",
-    defaultTerms: profile?.defaultTerms || "",
-    defaultNotes: profile?.defaultNotes || "",
-    defaultExclusions: profile?.defaultExclusions || "",
-    
+    // Encryption & Permissions
+    localEncryption: profile?.localEncryption !== false,
+    cloudEncryption: profile?.cloudEncryption !== false,
+
     // Preferences
     currency: profile?.currency || "INR (₹)",
-    autoSave: profile?.autoSave !== false,
-    autoBackup: profile?.autoBackup !== false,
     isDefault: !!profile?.isDefault
   });
 
@@ -92,12 +130,12 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
     }
   };
 
-  const handleSetAsDefault = () => {
-    if (form.id) {
-      localDB.setDefaultCompanyProfile(form.id);
-      setForm(prev => ({ ...prev, isDefault: true }));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+  const handleQRCodeUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setForm(prev => ({ ...prev, qrCodeImage: reader.result }));
+      reader.readAsDataURL(file);
     }
   };
 
@@ -117,25 +155,36 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
       pincode: form.pincode,
       country: form.country,
       gstNo: form.gstNo,
-      
-      coverLetterSubject: form.coverLetterSubject,
-      coverLetterBody: form.coverLetterBody,
-      defaultDiscount: form.defaultDiscount,
-      defaultValidity: form.defaultValidity,
-      defaultWarranty: form.defaultWarranty,
-      defaultPaintBrand: form.defaultPaintBrand,
-      defaultTerms: form.defaultTerms,
-      defaultNotes: form.defaultNotes,
-      defaultExclusions: form.defaultExclusions,
-      
+      panNo: form.panNo,
+      businessType: form.businessType,
+      timeZone: form.timeZone,
+
       bankDetails: {
         bankName: form.bankName,
         accountHolder: form.accountHolder,
         accountNumber: form.accountNumber,
         ifscCode: form.ifscCode,
         branch: form.branch,
-        upiId: form.upiId
+        upiId: form.upiId,
+        qrCodeImage: form.qrCodeImage
       },
+
+      taxPercentage: form.taxPercentage,
+      hsnCode: form.hsnCode,
+      invoicePrefix: form.invoicePrefix,
+      quotationPrefix: form.quotationPrefix,
+      numberFormat: form.numberFormat,
+      autoNumbering: form.autoNumbering,
+
+      paperSize: form.paperSize,
+      pageMargins: form.pageMargins,
+      headerText: form.headerText,
+      footerText: form.footerText,
+      defaultFilename: form.defaultFilename,
+      showPageNumbers: form.showPageNumbers,
+      companyWatermark: form.companyWatermark,
+      pdfQuality: form.pdfQuality,
+
       signature: {
         name: form.signatoryName,
         designation: form.designation,
@@ -143,9 +192,10 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
         email: form.signatoryEmail,
         signatureImage: form.signatureImage
       },
+
+      localEncryption: form.localEncryption,
+      cloudEncryption: form.cloudEncryption,
       currency: form.currency,
-      autoSave: form.autoSave,
-      autoBackup: form.autoBackup,
       isDefault: form.isDefault
     });
 
@@ -157,49 +207,48 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-[90] bg-[#F8FAFC] flex flex-col animate-in slide-in-from-right duration-250 font-sans overflow-hidden">
-      
+
       {/* 📱 WORKSPACE HEADER */}
-      <div className="sticky top-0 z-10 bg-white border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200/80 px-3 py-2.5 sm:px-4 sm:py-3 flex items-center justify-between gap-2 shadow-2xs w-full">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
           <button
             onClick={onBack}
-            className="w-10 h-10 rounded-2xl bg-slate-100/80 hover:bg-slate-200/70 text-slate-700 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-            aria-label="Back"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-100/80 hover:bg-slate-200/70 text-slate-700 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 p-0.5 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 border border-blue-100 p-0.5 flex items-center justify-center shrink-0">
               {form.companyLogo ? (
-                <img src={form.companyLogo} alt="Logo" className="w-full h-full object-contain" />
+                <img src={form.companyLogo} alt="Logo" className="w-full h-full object-contain rounded-lg" />
               ) : (
                 <Building2 size={18} className="text-blue-600" />
               )}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-tight truncate">
-                  {form.companyName || "Company Workspace"}
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate">
+                  {form.companyName || "Company Profile"}
                 </h2>
                 {form.isDefault && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-extrabold uppercase">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-extrabold uppercase shrink-0">
                     <Star size={9} className="fill-emerald-600 text-emerald-600" /> Default
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-slate-500 font-medium">Independent Company Business Workspace</p>
+              <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">Consolidated Enterprise Configuration</p>
             </div>
           </div>
         </div>
 
         <button
           onClick={handleSaveWorkspace}
-          className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl cursor-pointer shadow-md transition-all active:scale-95 ${
+          className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
             saved ? "bg-emerald-600 text-white shadow-emerald-600/20" : "bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700"
           }`}
         >
           {saved ? <CheckCircle2 size={15} /> : <Save size={15} />}
-          <span>{saved ? "Saved" : "Save Workspace"}</span>
+          <span>{saved ? "Saved" : "Save Profile"}</span>
         </button>
       </div>
 
@@ -207,12 +256,11 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
       <div className="bg-white border-b border-slate-200/80 px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
         {[
           { id: "all", label: "All Sections", icon: <Building2 size={13} /> },
-          { id: "info", label: "1. Company Info", icon: <Building2 size={13} /> },
-          { id: "bank", label: "2. Banking", icon: <Landmark size={13} /> },
-          { id: "signature", label: "3. Signature", icon: <FileCheck size={13} /> },
-          { id: "templates", label: "4. Templates", icon: <FileText size={13} /> },
-          { id: "cloud", label: "5. Cloud Backup", icon: <Cloud size={13} /> },
-          { id: "preferences", label: "6. Preferences", icon: <Settings2 size={13} /> },
+          { id: "info", label: "🏢 1. Company Info", icon: <Building2 size={13} /> },
+          { id: "bank", label: "🏦 2. Bank Details", icon: <Landmark size={13} /> },
+          { id: "tax", label: "🧾 3. Tax & Billing", icon: <FileText size={13} /> },
+          { id: "pdf", label: "📄 4. PDF & Documents", icon: <FileCheck size={13} /> },
+          { id: "security", label: "🔐 5. Encryption & Permissions", icon: <ShieldCheck size={13} /> },
         ].map(tab => (
           <button
             key={tab.id}
@@ -223,7 +271,6 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
             }`}
           >
-            {tab.icon}
             <span>{tab.label}</span>
           </button>
         ))}
@@ -231,12 +278,12 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
 
       {/* 🏢 MAIN WORKSPACE CONTENT */}
       <div className="flex-1 overflow-y-auto p-4 max-w-4xl mx-auto w-full space-y-4 pb-24">
-        
-        {/* SECTION 1: Company Information */}
+
+        {/* 🏢 SECTION 1: Company Information */}
         {(activeTab === "all" || activeTab === "info") && (
           <SettingsCard
-            title="1. Company Information"
-            subtitle="Branding & contact details for PDF proposal header"
+            title="🏢 1. Company Information"
+            subtitle="Company Name, Logo, Address, Phone, Email, Website, GST & PAN Numbers"
             icon={<Building2 size={18} />}
             iconBg="bg-blue-50 text-blue-600"
           >
@@ -248,7 +295,7 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
               </div>
               <div>
                 <p className="text-xs font-extrabold text-slate-800">Company Logo</p>
-                <p className="text-[10px] text-slate-500 font-medium mt-0.5">Displays on top header of PDF preview &amp; export</p>
+                <p className="text-[10px] text-slate-500 font-medium mt-0.5">Displays on top header of PDF proposal &amp; export</p>
                 <label className="inline-block mt-1 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer">
                   Upload Logo
                   <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
@@ -257,17 +304,24 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
             </div>
 
             <div className="space-y-3">
-              <MobileInput label="Company Name" value={form.companyName} onChange={e => handleChange("companyName", e.target.value)} placeholder="e.g. VisionX Technologies" />
+              <MobileInput label="Company Name" value={form.companyName} onChange={e => handleChange("companyName", e.target.value)} placeholder="e.g. ZERONYX Technologies Pvt Ltd" />
               <MobileInput label="Tagline / Slogan" value={form.companyTagline} onChange={e => handleChange("companyTagline", e.target.value)} placeholder="e.g. Premium Painting & Interior Solutions" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <MobileInput label="Contact Email" value={form.email} onChange={e => handleChange("email", e.target.value)} placeholder="contact@visionx.com" />
+                <MobileInput label="Contact Email" value={form.email} onChange={e => handleChange("email", e.target.value)} placeholder="contact@VisionX.com" />
                 <MobileInput label="Phone Number" value={form.phone} onChange={e => handleChange("phone", e.target.value)} placeholder="+91 00000 00000" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <MobileInput label="Alternate Phone" value={form.altPhone} onChange={e => handleChange("altPhone", e.target.value)} placeholder="+91 00000 00000" />
-                <MobileInput label="Website URL" value={form.website} onChange={e => handleChange("website", e.target.value)} placeholder="www.visionx.com" />
+                <MobileInput label="Website URL" value={form.website} onChange={e => handleChange("website", e.target.value)} placeholder="www.VisionX.com" />
               </div>
-              <MobileInput label="GST Number (GSTIN)" value={form.gstNo} onChange={e => handleChange("gstNo", e.target.value)} placeholder="33ABCDE1234F1Z5" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <MobileInput label="GST Number (GSTIN)" value={form.gstNo} onChange={e => handleChange("gstNo", e.target.value)} placeholder="33ABCDE1234F1Z5" />
+                <MobileInput label="PAN Number" value={form.panNo} onChange={e => handleChange("panNo", e.target.value)} placeholder="ABCDE1234F" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <MobileInput label="Business Type" value={form.businessType} onChange={e => handleChange("businessType", e.target.value)} placeholder="Private Limited / Proprietorship" />
+                <MobileInput label="Time Zone" value={form.timeZone} onChange={e => handleChange("timeZone", e.target.value)} placeholder="Asia/Kolkata (GMT+5:30)" />
+              </div>
               <MobileInput label="Street Address" value={form.address} onChange={e => handleChange("address", e.target.value)} placeholder="Full registered office address" rows={2} />
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <MobileInput label="City" value={form.city} onChange={e => handleChange("city", e.target.value)} placeholder="City" />
@@ -279,18 +333,18 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
           </SettingsCard>
         )}
 
-        {/* SECTION 2: Banking Information */}
+        {/* 🏦 SECTION 2: Bank Details */}
         {(activeTab === "all" || activeTab === "bank") && (
           <SettingsCard
-            title="2. Banking Information"
-            subtitle="Auto-populates payment details table for this company"
+            title="🏦 2. Bank Details"
+            subtitle="Bank Name, Account Holder, Account Number, IFSC, Branch, UPI ID & QR Code"
             icon={<Landmark size={18} />}
             iconBg="bg-emerald-50 text-emerald-600"
           >
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <MobileInput label="Bank Name" value={form.bankName} onChange={e => handleChange("bankName", e.target.value)} placeholder="HDFC Bank" />
-                <MobileInput label="Account Holder Name" value={form.accountHolder} onChange={e => handleChange("accountHolder", e.target.value)} placeholder="VisionX Technologies Pvt Ltd" />
+                <MobileInput label="Account Holder Name" value={form.accountHolder} onChange={e => handleChange("accountHolder", e.target.value)} placeholder="ZERONYX Technologies Pvt Ltd" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <MobileInput label="Account Number" value={form.accountNumber} onChange={e => handleChange("accountNumber", e.target.value)} placeholder="50100234567890" />
@@ -298,92 +352,119 @@ export default function CompanyWorkspaceScreen({ profileId, onBack, onSaved }) {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <MobileInput label="Branch Name" value={form.branch} onChange={e => handleChange("branch", e.target.value)} placeholder="Main City Branch" />
-                <MobileInput label="UPI ID" value={form.upiId} onChange={e => handleChange("upiId", e.target.value)} placeholder="visionx@hdfcbank" />
+                <MobileInput label="UPI ID" value={form.upiId} onChange={e => handleChange("upiId", e.target.value)} placeholder="VisionX@hdfcbank" />
+              </div>
+
+              <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mt-2">
+                <div className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
+                  {form.qrCodeImage
+                    ? <img src={form.qrCodeImage} alt="QR Code" className="w-full h-full object-contain" />
+                    : <ImageIcon size={20} className="text-slate-300" />}
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-slate-800">Payment QR Code Image</p>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Upload UPI payment QR code for invoices</p>
+                  <label className="inline-block mt-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer">
+                    Upload Payment QR Code
+                    <input type="file" accept="image/*" onChange={handleQRCodeUpload} className="hidden" />
+                  </label>
+                </div>
               </div>
             </div>
           </SettingsCard>
         )}
 
-        {/* SECTION 3: Authorized Signature */}
-        {(activeTab === "all" || activeTab === "signature") && (
+        {/* 🧾 SECTION 3: Tax & Billing */}
+        {(activeTab === "all" || activeTab === "tax") && (
           <SettingsCard
-            title="3. Authorized Signature"
-            subtitle="Displays at footer of proposals for this company"
-            icon={<FileCheck size={18} />}
-            iconBg="bg-amber-50 text-amber-600"
-          >
-            <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-4">
-              <div className="w-20 h-14 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
-                {form.signatureImage
-                  ? <img src={form.signatureImage} alt="Signature" className="w-full h-full object-contain" />
-                  : <ImageIcon size={20} className="text-slate-300" />}
-              </div>
-              <div>
-                <p className="text-xs font-extrabold text-slate-800">Signature Stamp / Image</p>
-                <p className="text-[10px] text-slate-500 font-medium mt-0.5">PNG or JPG image with transparent/white background</p>
-                <label className="inline-block mt-1 text-xs font-bold text-amber-600 hover:text-amber-700 cursor-pointer">
-                  Upload Signature
-                  <input type="file" accept="image/*" onChange={handleSignatureUpload} className="hidden" />
-                </label>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <MobileInput label="Authorized Signatory Name" value={form.signatoryName} onChange={e => handleChange("signatoryName", e.target.value)} placeholder="e.g. Rajesh Kumar" />
-              <MobileInput label="Designation" value={form.designation} onChange={e => handleChange("designation", e.target.value)} placeholder="e.g. Managing Director" />
-            </div>
-          </SettingsCard>
-        )}
-
-        {/* SECTION 4: Default Quotation Templates */}
-        {(activeTab === "all" || activeTab === "templates") && (
-          <SettingsCard
-            title="4. Default Quotation Templates"
-            subtitle="Pre-fill cover letter, warranty, scope, exclusions &amp; terms for this company"
+            title="🧾 3. Tax & Billing"
+            subtitle="GSTIN, Tax Percentage, HSN Code, Invoice Prefix, Quotation Prefix & Number Format"
             icon={<FileText size={18} />}
+            iconBg="bg-indigo-50 text-indigo-600"
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <MobileInput label="Tax Percentage (%)" value={form.taxPercentage} onChange={e => handleChange("taxPercentage", e.target.value)} placeholder="18" />
+                <MobileInput label="HSN / SAC Code" value={form.hsnCode} onChange={e => handleChange("hsnCode", e.target.value)} placeholder="998311" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <MobileInput label="Invoice Prefix" value={form.invoicePrefix} onChange={e => handleChange("invoicePrefix", e.target.value)} placeholder="INV-" />
+                <MobileInput label="Quotation Prefix" value={form.quotationPrefix} onChange={e => handleChange("quotationPrefix", e.target.value)} placeholder="QTN-" />
+              </div>
+              <MobileInput label="Number Format Template" value={form.numberFormat} onChange={e => handleChange("numberFormat", e.target.value)} placeholder="QTN-2026-0001" />
+            </div>
+          </SettingsCard>
+        )}
+
+        {/* 📄 SECTION 4: PDF & Document Settings */}
+        {(activeTab === "all" || activeTab === "pdf") && (
+          <SettingsCard
+            title="📄 4. PDF & Document Settings"
+            subtitle="Paper Size, Margins, Headers, Footers, Watermarks & Digital Signature"
+            icon={<FileCheck size={18} />}
             iconBg="bg-purple-50 text-purple-600"
           >
             <div className="space-y-3">
-              <MobileInput label="Default Cover Letter Subject" value={form.coverLetterSubject} onChange={e => handleChange("coverLetterSubject", e.target.value)} placeholder="Quotation for Painting Work" />
-              <MobileInput label="Default Cover Letter Body" value={form.coverLetterBody} onChange={e => handleChange("coverLetterBody", e.target.value)} rows={3} placeholder="Enter default introduction text..." />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <MobileInput label="Default Warranty Statement" value={form.defaultWarranty} onChange={e => handleChange("defaultWarranty", e.target.value)} placeholder="3 Years Warranty" />
-                <MobileInput label="Default Validity Clause" value={form.defaultValidity} onChange={e => handleChange("defaultValidity", e.target.value)} placeholder="30 Days from issue date" />
+                <MobileInput label="Paper Size" value={form.paperSize} onChange={e => handleChange("paperSize", e.target.value)} placeholder="A4" />
+                <MobileInput label="Page Margins" value={form.pageMargins} onChange={e => handleChange("pageMargins", e.target.value)} placeholder="Standard (10mm)" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <MobileInput label="Default Brand Specification" value={form.defaultPaintBrand} onChange={e => handleChange("defaultPaintBrand", e.target.value)} placeholder="Asian Paints Royale / Dulux Silk" />
-                <MobileInput label="Default Discount (%)" value={form.defaultDiscount} onChange={e => handleChange("defaultDiscount", e.target.value)} placeholder="0" />
+                <MobileInput label="Default Filename Template" value={form.defaultFilename} onChange={e => handleChange("defaultFilename", e.target.value)} placeholder="Quotation_<Number>" />
+                <MobileInput label="PDF Quality" value={form.pdfQuality} onChange={e => handleChange("pdfQuality", e.target.value)} placeholder="High (300 DPI)" />
               </div>
-              <MobileInput label="Default Scope of Work" value={form.defaultNotes} onChange={e => handleChange("defaultNotes", e.target.value)} rows={3} />
-              <MobileInput label="Default Exclusions" value={form.defaultExclusions} onChange={e => handleChange("defaultExclusions", e.target.value)} rows={3} />
-              <MobileInput label="Default Terms &amp; Conditions" value={form.defaultTerms} onChange={e => handleChange("defaultTerms", e.target.value)} rows={4} />
+              <MobileInput label="Footer Note / Disclaimer" value={form.footerText} onChange={e => handleChange("footerText", e.target.value)} rows={2} />
+              <MobileInput label="Company Watermark Text" value={form.companyWatermark} onChange={e => handleChange("companyWatermark", e.target.value)} placeholder="CONFIDENTIAL" />
+
+              <div className="flex items-center gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mt-2">
+                <div className="w-20 h-14 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
+                  {form.signatureImage
+                    ? <img src={form.signatureImage} alt="Signature" className="w-full h-full object-contain" />
+                    : <ImageIcon size={20} className="text-slate-300" />}
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-slate-800">Authorized Digital Signature</p>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Displays on proposal approval section</p>
+                  <label className="inline-block mt-1 text-xs font-bold text-purple-600 hover:text-purple-700 cursor-pointer">
+                    Upload Signature Image
+                    <input type="file" accept="image/*" onChange={handleSignatureUpload} className="hidden" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <MobileInput label="Authorized Signatory Name" value={form.signatoryName} onChange={e => handleChange("signatoryName", e.target.value)} placeholder="e.g. Rajesh Kumar" />
+                <MobileInput label="Designation" value={form.designation} onChange={e => handleChange("designation", e.target.value)} placeholder="e.g. Managing Director" />
+              </div>
             </div>
           </SettingsCard>
         )}
 
-        {/* SECTION 5: Cloud Backup */}
-        {(activeTab === "all" || activeTab === "cloud") && (
-          <CloudStorageSettingsCard />
-        )}
-
-        {/* SECTION 6: Workspace Preferences */}
-        {(activeTab === "all" || activeTab === "preferences") && (
+        {/* 🔐 SECTION 5: Encryption & Permissions */}
+        {(activeTab === "all" || activeTab === "security") && (
           <SettingsCard
-            title="6. Workspace Preferences"
-            subtitle="Currency unit &amp; proposal formatting settings for this company"
-            icon={<Settings2 size={18} />}
-            iconBg="bg-blue-50 text-blue-600"
+            title="🔐 5. Encryption & Permissions"
+            subtitle="Local Database Encryption, Cloud Encryption & Access Control"
+            icon={<ShieldCheck size={18} />}
+            iconBg="bg-rose-50 text-rose-600"
           >
             <div className="space-y-3">
-              {/* Currency Selector */}
-              <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-2.5">
-                  <IndianRupee size={16} className="text-slate-600" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">Workspace Currency</p>
-                    <p className="text-[10px] text-slate-500 font-medium">Default pricing unit for proposals</p>
-                  </div>
+              <div className="p-3.5 bg-rose-50/60 border border-rose-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-rose-900">
+                  <Lock size={15} /> <span>AES-256 Database Encryption Active</span>
                 </div>
-                <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">₹ INR</span>
+                <p className="text-[11px] text-rose-700 font-medium leading-relaxed">
+                  All local company profiles, banking secrets, and quotation records are encrypted before storing in local DB cache.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-blue-900">
+                  <Shield size={15} /> <span>Cloud & Export Permission Controls</span>
+                </div>
+                <p className="text-[11px] text-blue-700 font-medium leading-relaxed">
+                  Only authorized users of this company profile can export PDFs, sync with Google Drive, or modify workspace settings.
+                </p>
               </div>
             </div>
           </SettingsCard>

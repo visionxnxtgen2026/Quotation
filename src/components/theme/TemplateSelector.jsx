@@ -1,229 +1,141 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Layout, Printer, Download, Edit3, Check, Share2, ChevronDown } from "lucide-react";
+import React from "react";
+import { Layout, Edit3, Check, FileText, FileCode, Sheet, Image as ImageIcon, Download } from "lucide-react";
 import {
-  TEMPLATE_REGISTRY,
-  OUTPUT_FORMATS,
-  getTemplateOutputFormat,
-  setTemplateOutputFormat,
-} from "./templateUtils.js";
+  FORMAT_TYPES,
+  getTemplatesByFormat,
+  getTemplateDetails,
+  getDefaultTemplateForFormat,
+} from "../../utils/templateRegistry.js";
 
-export default function TemplateSelector({ selected, onSelect, onPrint, onExport, onEdit, isExporting }) {
-  // Current output format for the active template
-  const [outputFormat, setOutputFormat] = useState(() => getTemplateOutputFormat(selected || "classic"));
-  const [showFormatMenu, setShowFormatMenu] = useState(false);
-  const formatMenuRef = useRef(null);
+export default function TemplateSelector({
+  selectedTemplate = "modern-proposal",
+  selectedFormat = "pdf",
+  onSelectFormat,
+  onSelectTemplate,
+  onEdit,
+  onExport,
+  isExporting = false,
+}) {
+  const currentFormatObj = FORMAT_TYPES.find((f) => f.id === selectedFormat) || FORMAT_TYPES[0];
+  const activeTemplates = getTemplatesByFormat(selectedFormat);
+  const currentTemplateObj = getTemplateDetails(selectedTemplate);
 
-  // Keep format state in sync when selected template changes
-  useEffect(() => {
-    setOutputFormat(getTemplateOutputFormat(selected));
-    setShowFormatMenu(false);
-  }, [selected]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      if (formatMenuRef.current && !formatMenuRef.current.contains(e.target)) {
-        setShowFormatMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleFormatChange = (formatId) => {
-    setTemplateOutputFormat(selected, formatId);
-    setOutputFormat(formatId);
-    setShowFormatMenu(false);
-    // Notify parent so Export.jsx can immediately reflect the change
-    if (typeof onExport === "function") {
-      // Dispatch a custom event so Export.jsx re-reads format without a prop chain
-      window.dispatchEvent(new CustomEvent("templateFormatChanged", { detail: { templateId: selected, formatId } }));
+  const getFormatIcon = (fmtId) => {
+    switch (fmtId) {
+      case "docx":
+        return <FileCode size={14} className="text-blue-500" />;
+      case "xlsx":
+        return <Sheet size={14} className="text-emerald-500" />;
+      case "png":
+        return <ImageIcon size={14} className="text-purple-500" />;
+      case "pdf":
+      default:
+        return <FileText size={14} className="text-red-500" />;
     }
   };
 
-  const currentFmt = OUTPUT_FORMATS.find((f) => f.id === outputFormat) || OUTPUT_FORMATS[0];
-  const enabledFormats = OUTPUT_FORMATS.filter((f) => f.enabled);
-  const disabledFormats = OUTPUT_FORMATS.filter((f) => !f.enabled);
+  const handleFormatChange = (fmtId) => {
+    if (onSelectFormat) onSelectFormat(fmtId);
+    const firstTpl = getDefaultTemplateForFormat(fmtId);
+    if (onSelectTemplate && firstTpl) {
+      onSelectTemplate(firstTpl.id);
+    }
+  };
 
   return (
     <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col xl:flex-row items-center justify-between shadow-xs sticky top-0 z-30 print:hidden gap-3 transition-all">
-
-      {/* 📑 TEMPLATE SWITCHER TABS */}
-      <div className="flex items-center gap-2.5 w-full xl:w-auto overflow-hidden">
-        <div className="flex items-center gap-2 text-slate-400 border-r border-slate-200 pr-3 shrink-0">
-          <Layout size={15} className="text-slate-600" />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 hidden md:inline-block">
-            Template
-          </span>
-        </div>
-
-        {/* Scrollable tab strip */}
-        <div className="flex bg-slate-100/80 p-1 rounded-xl gap-1 overflow-x-auto border border-slate-200/60 w-full snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {TEMPLATE_REGISTRY.map((t) => {
-            const isSelected = selected === t.id;
-            const fmt = OUTPUT_FORMATS.find((f) => f.id === getTemplateOutputFormat(t.id));
+      {/* ── 1. STEP 1 & STEP 2 TEMPLATE SWITCHER ── */}
+      <div className="flex flex-col md:flex-row items-start md:items-center gap-3 w-full xl:w-auto">
+        
+        {/* Step 1: Format Selector Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0">
+          {FORMAT_TYPES.map((fmt) => {
+            const isFmtSelected = selectedFormat === fmt.id;
             return (
               <button
-                key={t.id}
-                onClick={() => onSelect(t.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-200 flex items-center justify-center gap-1.5 shrink-0 snap-center cursor-pointer min-w-[100px] ${
-                  isSelected
-                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/80 font-bold"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent"
+                key={fmt.id}
+                onClick={() => handleFormatChange(fmt.id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  isFmtSelected
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
                 }`}
+                title={fmt.description}
               >
-                <div
-                  className={`w-2 h-2 rounded-full ${t.color} shrink-0 transition-transform ${
-                    isSelected ? "scale-125 shadow-xs" : "opacity-60"
-                  }`}
-                />
-                <span className="truncate">{t.name}</span>
-                {isSelected && (
-                  <Check size={12} className="text-slate-900 shrink-0 stroke-[3]" />
-                )}
+                {getFormatIcon(fmt.id)}
+                <span>{fmt.label}</span>
               </button>
             );
           })}
         </div>
+
+        <div className="hidden md:block w-px h-6 bg-slate-200 shrink-0" />
+
+        {/* Step 2: PDF Template Gallery Strip (ONLY shown for PDF format) */}
+        {selectedFormat === "pdf" ? (
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] p-0.5">
+            {activeTemplates.map((t) => {
+              const isSelected = selectedTemplate === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onSelectTemplate(t.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 shrink-0 snap-center cursor-pointer ${
+                    isSelected
+                      ? "bg-slate-900 text-white shadow-xs font-bold border border-slate-800"
+                      : "bg-slate-100/70 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 border border-slate-200/60"
+                  }`}
+                  title={t.subtitle || t.name}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${t.color} shrink-0 ${
+                      isSelected ? "ring-2 ring-white/50" : "opacity-80"
+                    }`}
+                  />
+                  <span className="truncate">{t.name}</span>
+                  {t.industry && (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase font-normal ${isSelected ? "bg-white/20 text-slate-200" : "bg-slate-200 text-slate-600"}`}>
+                      {t.industry.split('&')[0].trim()}
+                    </span>
+                  )}
+                  {isSelected && <Check size={12} className="text-white shrink-0 stroke-[3]" />}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>
+              {selectedFormat === "docx" && "Native Editable Word Document (.docx)"}
+              {selectedFormat === "xlsx" && "Native Microsoft Excel Spreadsheet (.xlsx)"}
+              {selectedFormat === "png" && "High-Resolution Image Snapshot (.png)"}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* ⚙️ ACTION BUTTONS */}
+      {/* ── 2. EDIT DETAILS & ONE-CLICK EXPORT BUTTON ── */}
       <div className="flex items-center justify-between w-full xl:w-auto xl:justify-end gap-2 shrink-0">
+        <button
+          onClick={onEdit}
+          className="p-2 text-slate-700 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-all border border-slate-200 bg-white shadow-xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3"
+          title="Edit Details"
+        >
+          <Edit3 size={14} />
+          <span>Edit Details</span>
+        </button>
 
-        {/* Secondary buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={onEdit}
-            className="p-2.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-all border border-slate-200 bg-white shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3"
-            title="Edit Details"
-          >
-            <Edit3 size={14} />
-            <span className="hidden sm:inline">Edit</span>
-          </button>
-
-          <button
-            onClick={onPrint}
-            className="p-2.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-all border border-slate-200 bg-white shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3"
-            title="Print"
-          >
-            <Printer size={14} />
-            <span className="hidden sm:inline">Print</span>
-          </button>
-        </div>
-
-        <div className="w-px h-6 bg-slate-200 hidden sm:block" />
-
-        {/* OUTPUT FORMAT SELECTOR + EXPORT BUTTON — combined pill group */}
-        <div className="flex items-stretch rounded-xl overflow-visible shadow-xs border border-slate-900/90 bg-slate-900">
-
-          {/* Export trigger */}
-          <button
-            onClick={onExport}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-2 text-white text-xs font-bold tracking-wide transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer rounded-l-xl hover:bg-slate-800"
-            title={`Export as ${currentFmt.label}`}
-          >
-            {isExporting ? (
-              <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
-            ) : (
-              <>
-                <Download size={14} className="hidden sm:block shrink-0" />
-                <Share2 size={14} className="sm:hidden shrink-0" />
-              </>
-            )}
-            <span className="hidden sm:inline">
-              {isExporting ? "Exporting..." : `Export as ${currentFmt.label}`}
-            </span>
-            <span className="sm:hidden">
-              {isExporting ? "..." : currentFmt.icon}
-            </span>
-          </button>
-
-          {/* Divider */}
-          <div className="w-px bg-white/20 my-1.5" />
-
-          {/* Format dropdown trigger */}
-          <div className="relative" ref={formatMenuRef}>
-            <button
-              onClick={() => setShowFormatMenu((v) => !v)}
-              disabled={isExporting}
-              className="flex items-center gap-1 px-2.5 py-2 text-white/80 hover:text-white hover:bg-slate-800 transition-all cursor-pointer rounded-r-xl disabled:opacity-50 h-full"
-              title="Change output format"
-              aria-label="Change output format"
-            >
-              <span className="text-xs font-semibold">{currentFmt.icon}</span>
-              <ChevronDown
-                size={12}
-                className={`transition-transform duration-200 ${showFormatMenu ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {/* Format dropdown menu */}
-            {showFormatMenu && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-slate-200 shadow-xl z-[200] overflow-hidden">
-                {/* Header */}
-                <div className="px-4 py-2.5 border-b border-slate-100">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Output Format</p>
-                  <p className="text-[11px] text-slate-600 font-medium mt-0.5">Choose file type for export</p>
-                </div>
-
-                {/* Enabled formats */}
-                <div className="py-1.5">
-                  {enabledFormats.map((fmt) => {
-                    const isActive = outputFormat === fmt.id;
-                    return (
-                      <button
-                        key={fmt.id}
-                        onClick={() => handleFormatChange(fmt.id)}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer ${
-                          isActive
-                            ? "bg-blue-50 text-blue-700"
-                            : "hover:bg-slate-50 text-slate-800"
-                        }`}
-                      >
-                        <span className="text-base leading-none">{fmt.icon}</span>
-                        <div className="flex-1">
-                          <p className={`text-xs font-bold ${isActive ? "text-blue-700" : "text-slate-900"}`}>
-                            {fmt.label}
-                          </p>
-                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{fmt.desc}</p>
-                        </div>
-                        {isActive && (
-                          <Check size={14} className="text-blue-600 shrink-0 stroke-[2.5]" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Disabled / Coming Soon formats */}
-                {disabledFormats.length > 0 && (
-                  <>
-                    <div className="border-t border-slate-100 mx-3" />
-                    <div className="py-1.5 pb-2">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 py-1">
-                        Coming Soon
-                      </p>
-                      {disabledFormats.map((fmt) => (
-                        <div
-                          key={fmt.id}
-                          className="flex items-center gap-3 px-4 py-2 opacity-40 cursor-not-allowed"
-                        >
-                          <span className="text-base leading-none">{fmt.icon}</span>
-                          <div className="flex-1">
-                            <p className="text-xs font-bold text-slate-500">{fmt.label}</p>
-                            <p className="text-[10px] text-slate-400 font-medium">{fmt.desc}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
+        {/* Primary 1-Click Instant Export Button */}
+        <button
+          onClick={onExport}
+          disabled={isExporting}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          title={`Generate ${currentFormatObj.name}`}
+        >
+          <Download size={14} />
+          <span>Export {currentFormatObj.label}</span>
+        </button>
       </div>
     </div>
   );

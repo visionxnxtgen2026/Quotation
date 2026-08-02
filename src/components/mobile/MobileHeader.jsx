@@ -1,44 +1,45 @@
-import React from "react";
+import React, { memo } from "react";
 import { ArrowLeft } from "lucide-react";
 
-export default function MobileHeader({ title, subtitle, onBack, right, logo = false }) {
+function MobileHeader({ title, subtitle, onBack, right, logo = false }) {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs print:hidden pt-[env(safe-area-inset-top,0px)]">
-      <div className="flex items-center justify-between h-16 px-4 w-full max-w-full overflow-hidden select-none">
-        {/* Left Back Button / Brand Icon (Minimum 44x44dp Touch Target) */}
-        <div className="w-11 h-11 flex items-center justify-start shrink-0">
+      <div className="flex items-center justify-between h-14 px-4 w-full max-w-full overflow-hidden select-none">
+        {/* Left Action / Brand Logo */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {onBack ? (
             <button
               onClick={onBack}
-              className="w-11 h-11 flex items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition-colors cursor-pointer"
+              className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition-colors cursor-pointer shrink-0"
               aria-label="Back"
             >
-              <ArrowLeft size={22} strokeWidth={2.2} />
+              <ArrowLeft size={20} strokeWidth={2.2} />
             </button>
           ) : logo ? (
-            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-2xs p-0.5 border border-slate-200">
-              <img src="/logo.png" alt="VisionX Logo" className="w-full h-full object-contain" />
+            <div className="w-8 h-8 rounded-xl bg-slate-900 p-1 flex items-center justify-center shrink-0 shadow-xs">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
           ) : null}
+
+          <div className="min-w-0 flex-1">
+            <h1 className="text-sm font-black text-slate-900 tracking-tight truncate leading-tight">
+              {title}
+            </h1>
+            {subtitle && (
+              <p className="text-[11px] font-semibold text-slate-500 truncate -mt-0.5">
+                {subtitle}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Centered Page Title (Material Design 3 20sp Typography) */}
-        <div className="flex-1 text-center min-w-0 px-2">
-          <h1 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight truncate leading-tight">
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="text-[11px] text-slate-500 font-medium truncate -mt-0.5">
-              {subtitle}
-            </p>
-          )}
-        </div>
-
-        {/* Right Action Container (12-16dp spacing, no overlapping) */}
-        <div className="min-w-[44px] flex items-center justify-end gap-2.5 shrink-0">
+        {/* Right Action Container */}
+        <div className="flex items-center justify-end gap-2 shrink-0">
           {right || null}
         </div>
       </div>
     </header>
   );
 }
+
+export default memo(MobileHeader);

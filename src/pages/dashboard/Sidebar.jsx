@@ -46,10 +46,10 @@ export default function Sidebar({
           Main Menu
         </p>
         <div className="space-y-1">
-          <MenuItem icon={<DashboardIcon size={16} />} label="Dashboard"     active={active === "dashboard"} onClick={goToDashboard} />
-          <MenuItem icon={<FileIcon size={16} />}      label="Create Quote"  active={active === "create"}    onClick={goToCreate} />
-          <MenuItem icon={<EyeIcon size={16} />}       label="Preview"       active={active === "preview"}   onClick={goToPreview} />
-          <MenuItem icon={<ExportIcon size={16} />}    label="Export"        active={active === "export"}    onClick={goToExport} />
+          <MenuItem icon={<DashboardIcon size={16} />} label="Dashboard" active={active === "dashboard"} onClick={goToDashboard} />
+          <MenuItem icon={<FileIcon size={16} />} label="Create Quote" active={active === "create"} onClick={goToCreate} />
+          <MenuItem icon={<EyeIcon size={16} />} label="Preview" active={active === "preview"} onClick={goToPreview} />
+          <MenuItem icon={<ExportIcon size={16} />} label="Export" active={active === "export"} onClick={goToExport} />
         </div>
       </div>
 
@@ -59,9 +59,9 @@ export default function Sidebar({
           System &amp; Storage
         </p>
         <div className="space-y-1">
-          <MenuItem icon={<StorageIcon size={16} />} label="Storage Manager"  active={active === "storage"}  onClick={goToStorage} />
-          <MenuItem icon={<HelpIcon size={16} />}    label="Help &amp; Support" active={active === "help"}    onClick={goToHelp} />
-          <MenuItem icon={<SettingsIcon size={16} />} label="Settings"         active={active === "settings"} onClick={goToSettings} />
+          <MenuItem icon={<StorageIcon size={16} />} label="Storage Manager" active={active === "storage"} onClick={goToStorage} />
+          <MenuItem icon={<HelpIcon size={16} />} label="Help &amp; Support" active={active === "help"} onClick={goToHelp} />
+          <MenuItem icon={<SettingsIcon size={16} />} label="Settings" active={active === "settings"} onClick={goToSettings} />
         </div>
       </div>
 
@@ -76,11 +76,10 @@ function MenuItem({ icon, label, active, onClick }) {
         e.preventDefault();
         if (onClick) onClick();
       }}
-      className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors relative text-xs ${
-        active
-          ? "text-white bg-slate-800 font-semibold"
-          : "text-slate-400 hover:text-white hover:bg-slate-800/60 font-medium"
-      }`}
+      className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors relative text-xs ${active
+        ? "text-white bg-slate-800 font-semibold"
+        : "text-slate-400 hover:text-white hover:bg-slate-800/60 font-medium"
+        }`}
     >
       {active && (
         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r-full" />

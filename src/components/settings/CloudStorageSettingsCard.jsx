@@ -109,7 +109,7 @@ export default function CloudStorageSettingsCard() {
       <div className="space-y-4">
         {/* Main Status Container */}
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/90 space-y-3">
-          
+
           {/* Header Row */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -123,11 +123,10 @@ export default function CloudStorageSettingsCard() {
             </div>
 
             {/* Status Badge */}
-            <div className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 ${
-              isConnected
-                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                : "bg-slate-200 text-slate-700 border border-slate-300"
-            }`}>
+            <div className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 ${isConnected
+              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+              : "bg-slate-200 text-slate-700 border border-slate-300"
+              }`}>
               <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
               <span>{isConnected ? "Connected" : "Not Connected"}</span>
             </div>

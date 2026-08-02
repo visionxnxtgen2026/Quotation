@@ -294,7 +294,7 @@ export default function EditProfile({ goBack }) {
                 label="UPI ID"
                 value={companyForm.bankDetails.upiId}
                 onChange={e => handleBankChange("upiId", e.target.value)}
-                placeholder="e.g. visionx@hdfcbank"
+                placeholder="e.g. VisionX@hdfcbank"
               />
             </div>
           </div>

@@ -164,7 +164,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
       {/* 👥 2. PREPARED FOR & PROJECT SUMMARY (SYMMETRIC TWO-COLUMN EQUAL CARDS) */}
       {(hasClientSection || hasProjectSection) && (
-        <div className="pdf-section-block grid grid-cols-2 gap-5 mb-5 items-stretch">
+        <div className="pdf-section-block pdf-client-block pdf-keep-together grid grid-cols-2 gap-5 mb-5 items-stretch">
           {/* Prepared For Card */}
           <div className="flex-1 bg-slate-50/90 border border-slate-200/90 rounded-xl p-4 flex flex-col justify-start box-border shadow-2xs">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 pb-1 border-b border-slate-200/80">
@@ -286,7 +286,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
       {/* 💰 4. FINANCIAL PRICING SUMMARY PANEL */}
       {hasGrandTotal && (
-        <div className="pdf-section-block flex justify-end mb-5 break-inside-avoid print:break-inside-avoid">
+        <div className="pdf-section-block pdf-summary-block pdf-keep-together flex justify-end mb-5 break-inside-avoid print:break-inside-avoid">
           <div className="w-80 border border-slate-300 rounded-xl overflow-hidden bg-slate-50/50 shadow-2xs">
             <div className="p-3.5 space-y-2 border-b border-slate-200 text-xs font-medium">
               {hasSubtotal && (
@@ -349,7 +349,7 @@ export default function EnterpriseQuotationLayout({ data }) {
 
           {/* Payment Details & Bank Transfer Info */}
           {hasBankDetails && (
-            <div className="pdf-section-block border border-slate-200 rounded-xl p-4 bg-slate-50/80 shadow-2xs break-inside-avoid">
+            <div className="pdf-section-block pdf-bank-block pdf-keep-together border border-slate-200 rounded-xl p-4 bg-slate-50/80 shadow-2xs break-inside-avoid">
               <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[11px] mb-2 pb-1 border-b border-slate-200">
                 Payment Details &amp; Bank Transfer Info
               </h4>
@@ -419,7 +419,7 @@ export default function EnterpriseQuotationLayout({ data }) {
       )}
 
       {/* ✍️ 6. AUTHORIZED SIGNATURE & FOOTER NOTE */}
-      <div className="pdf-section-block pt-5 mt-5 border-t-2 border-slate-900 flex justify-between items-end break-inside-avoid print:break-inside-avoid">
+      <div className="pdf-section-block pdf-signature-block pdf-keep-together pt-5 mt-5 border-t-2 border-slate-900 flex justify-between items-end break-inside-avoid print:break-inside-avoid">
         {/* Left Side Note & Website */}
         <div className="text-[11px] text-slate-500 font-medium space-y-0.5 flex-1 pr-6 text-left">
           <p className="font-black text-slate-900 text-xs">Thank you for your business!</p>

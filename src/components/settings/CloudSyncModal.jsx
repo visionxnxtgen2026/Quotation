@@ -205,7 +205,7 @@ export default function CloudSyncModal({ isOpen, onClose }) {
 
       {/* Sheet Container */}
       <div className="relative bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 border border-slate-200/80">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white sticky top-0 z-10">
           <div className="flex items-center gap-3">
@@ -269,9 +269,8 @@ export default function CloudSyncModal({ isOpen, onClose }) {
                     </div>
                   </div>
 
-                  <div className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 ${
-                    isConnected ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
-                  }`}>
+                  <div className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 ${isConnected ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                    }`}>
                     <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
                     <span>{isConnected ? "🟢 Connected" : "🔴 Not Connected"}</span>
                   </div>

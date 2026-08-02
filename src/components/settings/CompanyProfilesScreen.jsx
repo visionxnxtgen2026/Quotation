@@ -207,12 +207,12 @@ export default function CompanyProfilesScreen({
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-black text-slate-900 text-sm sm:text-base tracking-tight truncate">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <h4 className="font-black text-slate-900 text-xs sm:text-sm tracking-tight break-words line-clamp-2 leading-snug min-w-0">
                             {name}
                           </h4>
                           {isDefault && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300 text-[10px] font-black uppercase">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300 text-[10px] font-black uppercase shrink-0">
                               <Star size={10} className="fill-emerald-600 text-emerald-600" /> DEFAULT
                             </span>
                           )}
@@ -316,9 +316,11 @@ export default function CompanyProfilesScreen({
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreated={(created) => {
-          if (created && onSelectProfile) onSelectProfile(created);
+          setIsCreateModalOpen(false);
           if (onProfilesUpdated) onProfilesUpdated();
-          onClose();
+          if (created && created.id) {
+            handleSelectCompany(created);
+          }
         }}
       />
     </div>

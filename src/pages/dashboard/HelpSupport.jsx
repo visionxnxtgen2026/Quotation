@@ -13,13 +13,13 @@ export default function HelpSupport({
     { q: "How do I backup or transfer my quotations?", a: "Go to the Storage Manager page and tap 'Export JSON'. Import that file on any device to restore your data." },
     { q: "Does QuoteGen Pro require internet access?", a: "No. VisionX QuoteGen Pro works 100% offline. No internet connection is required." },
     { q: "How do I export my quotations as PDF?", a: "Navigate to the Export page and tap 'Download / Save PDF'. Your browser's print dialog will open — select 'Save as PDF'." },
-    { q: "How do I contact technical support?", a: "Contact VisionX Support via email at visionxnxtgen2026@gmail.com." },
+    { q: "How do I contact technical support?", a: "Contact VisionX Support via email at VisionXnxtgen2026@gmail.com." },
   ];
 
   const handleEmailSupport = () => {
     const subject = encodeURIComponent("VisionX QuoteGen Pro Support Request");
     const body = encodeURIComponent("Hello VisionX Support Team,\n\nI need assistance with QuoteGen Pro.\n\nIssue Description:\n\nThank you.");
-    window.location.href = `mailto:visionxnxtgen2026@gmail.com?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:VisionXnxtgen2026@gmail.com?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -47,7 +47,7 @@ export default function HelpSupport({
           <div className="flex-1 min-w-0">
             <p className="text-xs font-bold text-slate-900">Email Support</p>
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">Contact VisionX Technical Support team.</p>
-            <p className="text-[11px] font-bold text-blue-600 mt-1 truncate">visionxnxtgen2026@gmail.com</p>
+            <p className="text-[11px] font-bold text-blue-600 mt-1 truncate">VisionXnxtgen2026@gmail.com</p>
           </div>
         </button>
 

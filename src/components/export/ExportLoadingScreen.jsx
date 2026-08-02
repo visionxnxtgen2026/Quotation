@@ -1,27 +1,31 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const STEPS = [
-  "Preparing quotation...",
-  "Optimizing document...",
-  "Generating file...",
-  "Finalizing export...",
-];
-
-export default function ExportLoadingScreen({ formatLabel = "PDF" }) {
+export default function ExportLoadingScreen({ formatLabel = "PDF", templateName = "Modern Proposal" }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  useEffect(() => {
-    // Advance step text every ~400ms
-    const stepTimer = setInterval(() => {
-      setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
-    }, 420);
+  const steps = [
+    "Preparing quotation...",
+    "Loading company profile...",
+    `Applying selected template (${templateName})...`,
+    "Calculating totals...",
+    `Generating ${formatLabel}...`,
+    "Embedding logo...",
+    "Finalizing document...",
+    "Export completed.",
+  ];
 
-    // Smooth progress bar fill over ~1.8s
+  useEffect(() => {
+    // Advance step text every ~300ms
+    const stepTimer = setInterval(() => {
+      setStepIndex((i) => Math.min(i + 1, steps.length - 1));
+    }, 320);
+
+    // Smooth progress bar fill over ~2.4s
     let currentProgress = 0;
     const progressTimer = setInterval(() => {
-      currentProgress += 2.2;
+      currentProgress += 2.0;
       if (currentProgress >= 100) {
         currentProgress = 100;
         clearInterval(progressTimer);
@@ -33,7 +37,7 @@ export default function ExportLoadingScreen({ formatLabel = "PDF" }) {
       clearInterval(stepTimer);
       clearInterval(progressTimer);
     };
-  }, []);
+  }, [templateName, formatLabel]);
 
   return (
     <motion.div
@@ -59,9 +63,9 @@ export default function ExportLoadingScreen({ formatLabel = "PDF" }) {
           />
           {/* Icon card */}
           <div className="w-24 h-24 rounded-[28px] bg-blue-50 border border-blue-100 flex items-center justify-center shadow-lg">
-            <span className="text-5xl select-none">📄</span>
+            <span className="text-5xl select-none">⚡</span>
           </div>
-          {/* Animated corner dot */}
+          {/* Animated corner spinner */}
           <motion.div
             animate={{ scale: [1, 1.3, 1] }}
             transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
@@ -81,12 +85,12 @@ export default function ExportLoadingScreen({ formatLabel = "PDF" }) {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.3 }}
-        className="text-2xl font-black text-slate-900 tracking-tight mb-2"
+        className="text-2xl font-black text-slate-900 tracking-tight mb-2 text-center"
       >
         Generating {formatLabel}
       </motion.h2>
 
-      {/* Step text */}
+      {/* Dynamic step text */}
       <div className="h-6 mb-8">
         <AnimatePresence mode="wait">
           <motion.p
@@ -95,43 +99,24 @@ export default function ExportLoadingScreen({ formatLabel = "PDF" }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.22 }}
-            className="text-sm text-slate-500 font-medium text-center"
+            className="text-sm text-slate-600 font-semibold text-center"
           >
-            {STEPS[stepIndex]}
+            {steps[stepIndex]}
           </motion.p>
         </AnimatePresence>
       </div>
 
-      {/* Progress bar */}
-      <div className="w-full max-w-xs">
-        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-          <motion.div
-            className="h-full rounded-full bg-blue-500"
-            initial={{ width: "0%" }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.1, ease: "linear" }}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-[11px] font-bold text-slate-400">Processing...</span>
-          <span className="text-[11px] font-bold text-blue-600">{Math.round(progress)}%</span>
-        </div>
+      {/* Progress bar container */}
+      <div className="w-full max-w-xs bg-slate-100 rounded-full h-2 overflow-hidden mb-3">
+        <motion.div
+          className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-75"
+          style={{ width: `${progress}%` }}
+        />
       </div>
 
-      {/* Dot indicators */}
-      <div className="flex items-center gap-2 mt-10">
-        {STEPS.map((_, i) => (
-          <motion.div
-            key={i}
-            animate={{
-              width: i === stepIndex ? 24 : 6,
-              backgroundColor: i <= stepIndex ? "#3b82f6" : "#e2e8f0",
-            }}
-            transition={{ duration: 0.3 }}
-            className="h-1.5 rounded-full"
-          />
-        ))}
-      </div>
+      <p className="text-xs font-bold text-slate-400 font-mono tracking-wide">
+        {Math.round(progress)}%
+      </p>
     </motion.div>
   );
 }

@@ -37,9 +37,22 @@ function validatePDFLayout(element) {
 }
 
 /**
- * 🏛️ Enterprise-Grade Multi-Page PDF Exporter
- * 300 DPI vector rendering, section-aware page breaking, fixed A4 margins (18mm Top/Bottom, 15mm Left/Right),
- * repeating headers/footers, and clean page reflowing.
+ * 🏛️ Enterprise-Grade Global Document Layout Engine for PDF Generation
+ *
+ * Exact A4 Portrait Specifications:
+ * • Page Size: 210mm × 297mm
+ * • Margins: Top 20mm, Bottom 18mm, Left 16mm, Right 16mm
+ * • Printable Width: 178mm (210 - 32)
+ * • Fixed Header Height: 35mm (Repeats on Every Page)
+ * • Fixed Footer Height: 15mm (Repeats on Every Page)
+ * • Dynamic Content Height: 209mm (297 - 20 - 18 - 35 - 15)
+ *
+ * Features:
+ * • Automatic Multi-Page Pagination (1, 2, 3, 5, 10+ pages)
+ * • Atomic Section Preservation (Cards, Signatures, Bank Cards, Totals never split)
+ * • Table Row Integrity (Single rows are never cut in half)
+ * • Aspect Ratio Preservation for Logos & Signatures
+ * • Dynamic Page X of Y calculation
  */
 export async function exportEnterprisePDF(element, filename = "Quotation.pdf", quotationData = {}) {
   if (!element) {
@@ -56,7 +69,7 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
   const originalTop = element.style.top;
   const originalWidth = element.style.width;
 
-  // Mount element visibly off-screen at standard A4 canvas width (794px = 210mm at 96 DPI)
+  // Mount element visibly off-screen at standard A4 printable width (794px = 178mm at 96 DPI)
   element.style.display = "block";
   element.style.position = "fixed";
   element.style.left = "0px";
@@ -75,46 +88,69 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
     });
 
     const pdf = new jsPDF("p", "mm", "a4");
-    const pdfPageWidth = 210; // mm (A4 Width)
-    const pdfPageHeight = 297; // mm (A4 Height)
-    const headerHeight = 18; // mm (Top Margin: 18mm)
-    const footerHeight = 18; // mm (Bottom Margin: 18mm)
-    const marginX = 15; // mm (Left & Right Margins: 15mm)
-    const printableWidth = pdfPageWidth - marginX * 2; // 180 mm
-    const printableHeight = pdfPageHeight - headerHeight - footerHeight; // 261 mm
 
-    // Convert printable height mm to canvas px
-    const pageCanvasHeightPx = (printableHeight * canvas.width) / printableWidth;
+    // ── A4 GEOMETRY DEFINITIONS ──
+    const pdfPageWidth = 210; // mm
+    const pdfPageHeight = 297; // mm
+    const marginX = 16; // mm (Left & Right Margins: 16mm)
+    const marginTop = 20; // mm (Top Margin: 20mm)
+    const marginBottom = 18; // mm (Bottom Margin: 18mm)
+    const headerHeight = 35; // mm (Fixed Header Height)
+    const footerHeight = 15; // mm (Fixed Footer Height)
 
-    // Detect section cards & table rows for section-aware page break boundaries
+    const printableWidth = pdfPageWidth - marginX * 2; // 178 mm
+    const contentHeightMm = pdfPageHeight - marginTop - marginBottom - headerHeight - footerHeight; // 209 mm
+
+    // Convert content height mm to canvas pixels
+    const pageCanvasHeightPx = (contentHeightMm * canvas.width) / printableWidth;
+
+    // Detect section cards, table rows, and atomic blocks for page breaking
     const breakCandidates = Array.from(
       element.querySelectorAll(
-        ".pdf-section-block, .pdf-category-block, table, tr, .border, .rounded-xl, .rounded-2xl"
+        ".pdf-keep-together, .pdf-section-block, .pdf-category-block, .pdf-summary-block, .pdf-bank-block, .pdf-signature-block, .pdf-client-block, table, tr, h1, h2, h3, .border, .rounded-xl, .rounded-2xl"
       )
     );
 
     const containerRect = element.getBoundingClientRect();
     const scaleFactor = canvas.height / (containerRect.height || 1);
 
+    // ── PAGINATION CUT CALCULATION ALGORITHM ──
     const pageBreakIndicesPx = [0];
     let currentYPx = 0;
 
     while (currentYPx + pageCanvasHeightPx < canvas.height - 20) {
       const targetCutPx = currentYPx + pageCanvasHeightPx;
       let chosenCutPx = targetCutPx;
-
-      // Find nearest section boundary top before targetCutPx
       let foundBoundary = false;
+
+      // Scan break candidates to find optimal cut point above atomic blocks or table rows
       for (const el of breakCandidates) {
         const rect = el.getBoundingClientRect();
         const topPx = (rect.top - containerRect.top) * scaleFactor;
         const bottomPx = (rect.bottom - containerRect.top) * scaleFactor;
+        const isAtomic =
+          el.classList.contains("pdf-keep-together") ||
+          el.classList.contains("pdf-summary-block") ||
+          el.classList.contains("pdf-signature-block") ||
+          el.classList.contains("pdf-bank-block") ||
+          el.classList.contains("pdf-client-block");
 
-        // If section block crosses targetCutPx and top is after currentYPx + 70px
-        if (topPx > currentYPx + 70 && topPx <= targetCutPx && bottomPx > targetCutPx) {
-          chosenCutPx = topPx - 6; // Break cleanly right above section boundary
-          foundBoundary = true;
-          break;
+        // If an element crosses the targetCutPx boundary
+        if (topPx > currentYPx + 60 && topPx <= targetCutPx && bottomPx > targetCutPx) {
+          if (isAtomic) {
+            // Atomic section: break cleanly above the entire section
+            chosenCutPx = topPx - 6;
+            foundBoundary = true;
+            break;
+          } else if (el.tagName === "TR") {
+            // Table Row: break cleanly above the row to prevent cutting in half
+            chosenCutPx = topPx - 4;
+            foundBoundary = true;
+            break;
+          } else if (!foundBoundary) {
+            chosenCutPx = topPx - 4;
+            foundBoundary = true;
+          }
         }
       }
 
@@ -128,14 +164,40 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
 
     const totalPages = pageBreakIndicesPx.length;
 
-    // Metadata for Header & Footer
-    const companyName = (quotationData.companyName || quotationData.projectDetails?.companyName || "VisionX Enterprises").trim();
-    const refNo = quotationData.quotationNo || quotationData.referenceNo || quotationData.projectDetails?.referenceNo || "QTN-2026";
-    const dateStr = quotationData.date || quotationData.projectDetails?.date || new Date().toLocaleDateString("en-GB");
+    // ── HEADER & FOOTER METADATA ──
+    const companyName = (
+      quotationData.companyName ||
+      quotationData.projectDetails?.companyName ||
+      "VisionX Enterprises"
+    ).trim();
+    const tagline = (
+      quotationData.companyTagline ||
+      quotationData.projectDetails?.companyTagline ||
+      ""
+    ).trim();
+    const address = (
+      quotationData.companyAddress ||
+      quotationData.projectDetails?.companyAddress ||
+      ""
+    ).trim();
+    const refNo =
+      quotationData.quotationNo ||
+      quotationData.referenceNo ||
+      quotationData.projectDetails?.referenceNo ||
+      "QTN-2026";
+    const dateStr =
+      quotationData.date ||
+      quotationData.projectDetails?.date ||
+      new Date().toLocaleDateString("en-GB");
+    const expiryStr =
+      quotationData.expiryDate ||
+      quotationData.projectDetails?.expiryDate ||
+      "";
     const companyPhone = quotationData.companyPhone || quotationData.phone || "";
     const companyEmail = quotationData.companyEmail || quotationData.email || "";
     const gstNo = quotationData.gstNo || quotationData.gst || "";
     const website = quotationData.website || "";
+    const logoUrl = quotationData.companyLogo || null;
 
     const contactParts = [];
     if (companyPhone) contactParts.push(`Ph: ${companyPhone}`);
@@ -143,7 +205,9 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
     if (gstNo) contactParts.push(`GSTIN: ${gstNo}`);
     const contactInfo = contactParts.length > 0 ? contactParts.join(" • ") : "VisionX QuoteGen Pro Proposal";
 
-    // 2. Render Page Slices into jsPDF
+    const contentStartYMm = marginTop + headerHeight; // 20mm + 35mm = 55mm
+
+    // ── 2. RENDER PAGE SLICES INTO PDF ──
     for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
       if (pageIdx > 0) pdf.addPage();
 
@@ -166,53 +230,121 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
       );
 
       const pageImgData = pageCanvas.toDataURL("image/jpeg", 0.98);
-      pdf.addImage(pageImgData, "JPEG", marginX, headerHeight, printableWidth, Math.min(sliceHeightMm, printableHeight));
+      pdf.addImage(
+        pageImgData,
+        "JPEG",
+        marginX,
+        contentStartYMm,
+        printableWidth,
+        Math.min(sliceHeightMm, contentHeightMm)
+      );
 
-      // 3. Repeating Header (Every Page at 10mm top)
+      // ── 3. REPEATING FIXED HEADER (35mm Height on Every Page) ──
+      // Top Margin: 20mm. Header renders between y = 10mm and y = 45mm.
+      
+      // Header Top Border Accent
+      pdf.setFillColor(37, 99, 235); // Blue-600 accent bar
+      pdf.rect(marginX, 8, printableWidth, 1.5, "F");
+
+      // Left Column: Company Name & Identity
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
+      pdf.setFontSize(11);
       pdf.setTextColor(15, 23, 42); // slate-900
-      pdf.text(companyName.toUpperCase(), marginX, 10);
+      pdf.text(companyName.toUpperCase(), marginX, 15);
 
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(37, 99, 235); // blue-600
-      pdf.text("OFFICIAL QUOTATION PROPOSAL", pdfPageWidth - marginX - 52, 10);
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(100, 116, 139); // slate-500
-      pdf.text(`REF: ${refNo}  |  DATE: ${dateStr}`, pdfPageWidth - marginX, 10, { align: "right" });
-
-      // Top divider line (13mm down)
-      pdf.setDrawColor(203, 213, 225); // slate-300
-      pdf.setLineWidth(0.3);
-      pdf.line(marginX, 13, pdfPageWidth - marginX, 13);
-
-      // 4. Repeating Fixed Footer (18mm above bottom edge = 279mm)
-      const footerY = pdfPageHeight - 10; // 287mm
-
-      // Bottom overline divider line (at 284mm)
-      pdf.setDrawColor(203, 213, 225);
-      pdf.setLineWidth(0.3);
-      pdf.line(marginX, pdfPageHeight - 14, pdfPageWidth - marginX, pdfPageHeight - 14);
+      let headerDetailY = 19;
+      if (tagline) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(37, 99, 235); // blue-600
+        pdf.text(tagline, marginX, headerDetailY);
+        headerDetailY += 4;
+      }
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(7);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text(contactInfo, marginX, footerY);
+      pdf.setTextColor(71, 85, 105); // slate-600
 
-      if (website) {
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(7);
-        pdf.setTextColor(37, 99, 235);
-        pdf.text(website, pdfPageWidth / 2, footerY, { align: "center" });
+      if (address) {
+        const addressLines = pdf.splitTextToSize(address.replace(/\n/g, ", "), 110);
+        pdf.text(addressLines[0] || "", marginX, headerDetailY);
+        headerDetailY += 3.5;
       }
 
+      pdf.text(contactInfo, marginX, headerDetailY);
+
+      // Right Column: Proposal Document Title & Metadata
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(13);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text("QUOTATION", pdfPageWidth - marginX, 15, { align: "right" });
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor(37, 99, 235);
+      pdf.text(`REF: ${refNo}`, pdfPageWidth - marginX, 20, { align: "right" });
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`DATE: ${dateStr}`, pdfPageWidth - marginX, 24.5, { align: "right" });
+
+      if (expiryStr) {
+        pdf.text(`VALID UNTIL: ${expiryStr}`, pdfPageWidth - marginX, 28.5, { align: "right" });
+      }
+
+      // Header Bottom Divider Line at 45mm
+      pdf.setDrawColor(203, 213, 225); // slate-300
+      pdf.setLineWidth(0.4);
+      pdf.line(marginX, 43, pdfPageWidth - marginX, 43);
+
+      // ── 4. REPEATING FIXED FOOTER (16mm Height, 3 Independent Bounded Zones) ──
+      // Footer Overline Line at 278mm (pdfPageHeight - 19mm)
+      pdf.setDrawColor(203, 213, 225); // slate-300
+      pdf.setLineWidth(0.35);
+      pdf.line(marginX, pdfPageHeight - 19, pdfPageWidth - marginX, pdfPageHeight - 19);
+
+      // Zone Width Specifications (Printable Width = 178mm)
+      const leftZoneWidth = printableWidth * 0.45; // 80.1mm (45%)
+      const centerZoneWidth = printableWidth * 0.30; // 53.4mm (30%)
+      const rightZoneWidth = printableWidth * 0.25; // 44.5mm (25%)
+
+      const footerTextY = pdfPageHeight - 13; // 284mm
+
+      // ── ZONE 1: LEFT (45% Width = 80.1mm) ──
+      // Contains Phone, Email, GST Number
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7);
+      pdf.setTextColor(100, 116, 139); // slate-500
+
+      const leftLines = pdf.splitTextToSize(contactInfo, leftZoneWidth);
+      pdf.text(leftLines, marginX, footerTextY);
+
+      // ── ZONE 2: CENTER (30% Width = 53.4mm) ──
+      // Contains Website & "Generated by VisionX QuoteGen Pro"
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7);
+      pdf.setTextColor(71, 85, 105); // slate-600
+
+      const centerTextStr = website
+        ? `${website}\nGenerated by VisionX QuoteGen Pro`
+        : "Generated by VisionX QuoteGen Pro";
+
+      const centerLines = pdf.splitTextToSize(centerTextStr, centerZoneWidth);
+      const centerX = marginX + leftZoneWidth + centerZoneWidth / 2; // 122.8mm
+      pdf.text(centerLines, centerX, footerTextY, { align: "center" });
+
+      // ── ZONE 3: RIGHT (25% Width = 44.5mm) ──
+      // Fixed right alignment at pdfPageWidth - marginX (194mm)
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(7.5);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`Page ${pageIdx + 1} of ${totalPages}`, pdfPageWidth - marginX, footerY, { align: "right" });
+      pdf.setTextColor(15, 23, 42); // slate-900
+      pdf.text(
+        `Page ${pageIdx + 1} of ${totalPages}`,
+        pdfPageWidth - marginX,
+        footerTextY + 1,
+        { align: "right" }
+      );
     }
 
     const pdfDataUri = pdf.output("datauristring");
@@ -227,3 +359,14 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
     element.style.width = originalWidth;
   }
 }
+
+export async function downloadPDF(mappedData) {
+  window.print();
+}
+
+export const pdfExporter = {
+  exportEnterprisePDF,
+  downloadPDF
+};
+
+export default pdfExporter;

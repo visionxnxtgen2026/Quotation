@@ -24,6 +24,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Google OAuth Deep Link Redirect Scheme for Android APK -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.visionx.quotegenpro" android:host="oauth2redirect" />
+            </intent-filter>
+
         </activity>
 
         <!-- Google AdMob Application ID -->
