@@ -64,52 +64,89 @@ export function normalizeQuotationData(rawInput) {
 
   const sections = rawSections.map((sec, secIdx) => {
     const rows = sec.rows || sec.items || [];
+    const components = (sec.components && sec.components.length > 0)
+      ? sec.components
+      : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
+
     let secLabourTotal = 0;
     let secMaterialTotal = 0;
 
     const sectionItems = rows.map((r, rIdx) => {
       const descStr = r.work || r.desc || r.workDescription || r.description || r.name || `Item #${rIdx + 1}`;
-      const labNum = Number(r.labour || r.labourRate || 0);
-      const matNum = Number(r.material || r.materialRate || 0);
       const qtyNum = Number(r.qty || r.quantity || 1);
-      const rateNum = Number(r.rate || (labNum + matNum));
-      const totNum = Number(r.total || r.amount || r.totalPrice || (rateNum * qtyNum));
+
+      const componentRates = { ...(r.componentRates || {}) };
+      const resolvedRates = {};
+      let rowTotalRate = 0;
+
+      components.forEach((c) => {
+        let val = 0;
+        if (componentRates[c.id] !== undefined && componentRates[c.id] !== "") {
+          val = Number(componentRates[c.id]) || 0;
+        } else if (c.id === "labour" && (r.labour !== undefined || r.labourRate !== undefined)) {
+          val = Number(r.labour || r.labourRate) || 0;
+        } else if (c.id === "material" && (r.material !== undefined || r.materialRate !== undefined)) {
+          val = Number(r.material || r.materialRate) || 0;
+        } else if (r[c.id] !== undefined && r[c.id] !== "") {
+          val = Number(r[c.id]) || 0;
+        }
+        resolvedRates[c.id] = val;
+        componentRates[c.id] = val;
+        rowTotalRate += val;
+      });
+
+      // Requirement 5: Row Total = sum(all pricing component values)
+      const totNum = rowTotalRate * qtyNum;
+
+      const labNum = resolvedRates["labour"] || 0;
+      const matNum = resolvedRates["material"] || 0;
 
       secLabourTotal += labNum;
       secMaterialTotal += matNum;
       subtotalNum += totNum;
 
       return {
+        ...r,
         id: r.id || rIdx + 1,
         desc: descStr,
         work: descStr,
         description: descStr,
         name: descStr,
         workDescription: descStr,
+        components,
+        componentRates,
+        resolvedRates,
         labour: labNum.toFixed(2),
         labourRate: labNum,
         material: matNum.toFixed(2),
         materialRate: matNum,
-        rate: rateNum.toFixed(2),
+        rate: rowTotalRate.toFixed(2),
+        totalRate: rowTotalRate,
         qty: qtyNum.toString(),
         quantity: qtyNum,
         unit: r.unit || "unit",
         total: totNum.toFixed(2),
         amount: totNum.toFixed(2),
         totalPrice: totNum,
+        ...resolvedRates,
       };
     });
 
-    const secRatePerSqft = rows.reduce((acc, r) => acc + (Number(r.total || r.amount) || (Number(r.labour || 0) + Number(r.material || 0))), 0);
+    // Requirement 6: Category Rate = sum(all work item totals)
+    const secRatePerSqft = sectionItems.reduce((acc, r) => acc + (r.totalRate || 0), 0);
     const workingAreaNum = Number(sec.workingArea || 0);
+
+    // Requirement 7: Category Amount = Category Rate × Area
     const secEstimatedAmount = workingAreaNum > 0 ? (workingAreaNum * secRatePerSqft) : secRatePerSqft;
 
     totalCategoryEstimatedAmount += secEstimatedAmount;
 
     return {
+      ...sec,
       id: sec.id || secIdx + 1,
       title: sec.title || `Category #${secIdx + 1}`,
       workingArea: sec.workingArea || "",
+      components,
       ratePerSqft: secRatePerSqft.toFixed(2),
       estimatedAmount: secEstimatedAmount.toFixed(2),
       labourTotal: secLabourTotal.toFixed(2),
@@ -332,10 +369,11 @@ export function extractQuotationModel(data) {
     const qty = getNum(item.quantity || item.qty || 1);
     const labRate = getNum(item.labourRate || item.labour || 0);
     const matRate = getNum(item.materialRate || item.material || 0);
-    const rate = getNum(item.rate || (labRate + matRate));
+    const rate = getNum(item.totalRate || item.rate || (labRate + matRate));
     const amount = getNum(item.amount || item.totalPrice || item.total || (rate * qty));
 
     return {
+      ...item,
       id: item.id || idx + 1,
       description: getStr(item.description || item.work || item.name || `Item #${idx + 1}`),
       unit: getStr(item.unit) || "unit",
@@ -343,6 +381,7 @@ export function extractQuotationModel(data) {
       labourRate: labRate,
       materialRate: matRate,
       rate: rate,
+      totalRate: rate,
       amount: amount,
     };
   });

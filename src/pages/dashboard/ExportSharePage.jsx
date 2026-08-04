@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ArrowLeft,
   FileText,
@@ -17,6 +17,42 @@ import {
 import { localDB } from "../../utils/localDB";
 import { normalizeQuotationData } from "../../utils/quotationMapper";
 import { admobManager } from "../../utils/admobManager";
+import { exportEnterprisePDF } from "../../utils/pdfExporter";
+import {
+  CorporateBlueTemplate,
+  MinimalWhiteTemplate,
+  ConstructionTemplate,
+  LuxuryGoldTemplate,
+  PaintContractorTemplate,
+  ModernGradientTemplate,
+  ExecutiveProposalTemplate,
+  InvoiceHybridTemplate,
+  ClassicBusinessTemplate,
+  CreativeStudioTemplate
+} from "../../components/theme/PDFTemplatesCollection";
+
+const pdfTemplateMap = {
+  "corporate-blue": CorporateBlueTemplate,
+  "minimal-white": MinimalWhiteTemplate,
+  "construction-yellow": ConstructionTemplate,
+  "luxury-gold": LuxuryGoldTemplate,
+  "paint-contractor": PaintContractorTemplate,
+  "modern-gradient": ModernGradientTemplate,
+  "executive-proposal": ExecutiveProposalTemplate,
+  "invoice-hybrid": InvoiceHybridTemplate,
+  "classic-business": ClassicBusinessTemplate,
+  "creative-studio": CreativeStudioTemplate,
+  corporateblue: CorporateBlueTemplate,
+  minimalwhite: MinimalWhiteTemplate,
+  construction: ConstructionTemplate,
+  luxurygold: LuxuryGoldTemplate,
+  paintcontractor: PaintContractorTemplate,
+  moderngradient: ModernGradientTemplate,
+  executiveproposal: ExecutiveProposalTemplate,
+  invoicehybrid: InvoiceHybridTemplate,
+  classicbusiness: ClassicBusinessTemplate,
+  creativestudio: CreativeStudioTemplate,
+};
 
 export default function ExportSharePage({
   goBack,
@@ -98,29 +134,27 @@ export default function ExportSharePage({
   // Desktop Fallback Modal State
   const [showDesktopFallback, setShowDesktopFallback] = useState(false);
 
-  // 📄 8. FIX DOWNLOAD PDF IMPLEMENTATION
+  const templateRef = useRef(null);
+  const selectedTemplate = quotationData?.template || localStorage.getItem("activeExportTemplate") || "corporate-blue";
+  const PDFComponent = pdfTemplateMap[selectedTemplate] || CorporateBlueTemplate;
+
+  // 📄 8. REAL DOWNLOAD PDF IMPLEMENTATION
   const handleDownloadPdf = async () => {
     admobManager.showInterstitial("Export Quotation PDF");
     showToast("📄 Generating PDF...");
     try {
-      const qtnNum = mappedData?.quotationNumber || quotationData?.quotationNumber || "QTN-2026-001";
+      const qtnNum = mappedData?.referenceNo || mappedData?.quotationNo || quotationData?.quotationNumber || "QTN-2026-001";
       const fileName = `Quotation_${qtnNum}.pdf`;
 
-      const jsonContent = JSON.stringify(mappedData || quotationData || { qtnNum });
-      const pdfBlob = new Blob([jsonContent], { type: "application/pdf" });
-      const url = URL.createObjectURL(pdfBlob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-
-      showToast("✓ PDF Downloaded Successfully");
+      if (templateRef.current && mappedData) {
+        await exportEnterprisePDF(templateRef.current, fileName, mappedData);
+        showToast("✓ PDF Downloaded Successfully");
+      } else {
+        window.print();
+      }
     } catch (e) {
-      showToast("❌ Failed to generate PDF. Retrying...");
+      console.error("PDF generation error:", e);
+      showToast(`❌ Failed to generate PDF: ${e.message || e}`);
     }
   };
 
@@ -455,6 +489,15 @@ export default function ExportSharePage({
             >
               Dismiss
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Offscreen Template Renderer for Enterprise PDF Generation */}
+      {mappedData && (
+        <div style={{ position: "absolute", left: "-9999px", top: "-9999px" }}>
+          <div ref={templateRef} style={{ width: "794px" }} className="bg-white">
+            <PDFComponent data={mappedData} />
           </div>
         </div>
       )}

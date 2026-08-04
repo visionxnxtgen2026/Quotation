@@ -194,8 +194,16 @@ export default function GroupedTemplate({ data }) {
                       <th className="py-2.5 px-4">Description</th>
                       {showUnit && <th className="py-2.5 px-4 text-center w-16">Unit</th>}
                       {showQty && <th className="py-2.5 px-4 text-center w-16">Qty</th>}
-                      {showLabour && <th className="py-2.5 px-4 text-right w-24">Labour</th>}
-                      {showMaterial && <th className="py-2.5 px-4 text-right w-24">Material</th>}
+                      {sec.components && sec.components.length > 0 ? (
+                        sec.components.map((c) => (
+                          <th key={c.id} className="py-2.5 px-4 text-right w-24">{c.name}</th>
+                        ))
+                      ) : (
+                        <>
+                          {showLabour && <th className="py-2.5 px-4 text-right w-24">Labour</th>}
+                          {showMaterial && <th className="py-2.5 px-4 text-right w-24">Material</th>}
+                        </>
+                      )}
                       {showRate && <th className="py-2.5 px-4 text-right w-24">Rate</th>}
                       <th className="py-2.5 px-4 text-right w-28">Amount</th>
                     </tr>
@@ -204,13 +212,28 @@ export default function GroupedTemplate({ data }) {
                     {sec.items.map((item, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
                         <td className="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">{idx + 1}</td>
-                        <td className="py-2.5 px-4 text-slate-900 font-semibold whitespace-pre-wrap">{item.desc}</td>
+                        <td className="py-2.5 px-4 text-slate-900 font-semibold whitespace-pre-wrap">{item.desc || item.work}</td>
                         {showUnit && <td className="py-2.5 px-4 text-center text-slate-500">{item.unit || "—"}</td>}
-                        {showQty && <td className="py-2.5 px-4 text-center font-mono">{item.qty || "1"}</td>}
-                        {showLabour && <td className="py-2.5 px-4 text-right font-mono">₹{item.labour}</td>}
-                        {showMaterial && <td className="py-2.5 px-4 text-right font-mono">₹{item.material}</td>}
+                        {showQty && <td className="py-2.5 px-4 text-center font-mono">{item.qty || item.quantity || "1"}</td>}
+                        {sec.components && sec.components.length > 0 ? (
+                          sec.components.map((c) => {
+                            const val = item.componentRates?.[c.id] !== undefined
+                              ? Number(item.componentRates[c.id]) || 0
+                              : (c.id === "labour" ? Number(item.labour || 0) : c.id === "material" ? Number(item.material || 0) : Number(item[c.id] || 0));
+                            return (
+                              <td key={c.id} className="py-2.5 px-4 text-right font-mono">
+                                ₹{val.toFixed(2)}
+                              </td>
+                            );
+                          })
+                        ) : (
+                          <>
+                            {showLabour && <td className="py-2.5 px-4 text-right font-mono">₹{item.labour}</td>}
+                            {showMaterial && <td className="py-2.5 px-4 text-right font-mono">₹{item.material}</td>}
+                          </>
+                        )}
                         {showRate && <td className="py-2.5 px-4 text-right font-mono">₹{item.rate}</td>}
-                        <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">₹{item.total}</td>
+                        <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">₹{item.total || item.amount}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -213,9 +213,21 @@ export default function EnterpriseQuotationLayout({ data }) {
         <div className="mb-5 space-y-5">
           {validSections.map((sec, secIdx) => {
             const secItems = sec.items || sec.rows || [];
-            const secLabourTotal = secItems.reduce((acc, r) => acc + (Number(r.labour) || 0), 0);
-            const secMaterialTotal = secItems.reduce((acc, r) => acc + (Number(r.material) || 0), 0);
-            const secRatePerSqft = secItems.reduce((acc, r) => acc + (Number(r.total) || (Number(r.labour || 0) + Number(r.material || 0))), 0);
+            const secComponents = (sec.components && sec.components.length > 0)
+              ? sec.components
+              : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
+
+            const compSubtotals = {};
+            secComponents.forEach(c => {
+              compSubtotals[c.id] = secItems.reduce((acc, item) => {
+                const val = item.componentRates?.[c.id] !== undefined
+                  ? Number(item.componentRates[c.id]) || 0
+                  : (c.id === "labour" ? Number(item.labour || 0) : c.id === "material" ? Number(item.material || 0) : Number(item[c.id] || 0));
+                return acc + val;
+              }, 0);
+            });
+
+            const secRatePerSqft = secItems.reduce((acc, r) => acc + (Number(r.totalRate ?? r.rate) || 0), 0);
             const workingAreaNum = Number(sec.workingArea || 0);
             const secEstimatedAmount = workingAreaNum > 0 ? (workingAreaNum * secRatePerSqft) : secRatePerSqft;
 
@@ -236,25 +248,39 @@ export default function EnterpriseQuotationLayout({ data }) {
                   <thead>
                     <tr className="bg-slate-100/90 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
                       <th className="py-2.5 px-3 border-r border-slate-200/80 w-[6%] text-center align-middle">#</th>
-                      <th className="py-2.5 px-3 border-r border-slate-200/80 w-[48%] text-left align-middle">Description of Work / Item Specification</th>
-                      {showLabour && <th className="py-2.5 px-3 border-r border-slate-200/80 w-[15%] text-right align-middle">Labour (₹)</th>}
-                      {showMaterial && <th className="py-2.5 px-3 border-r border-slate-200/80 w-[15%] text-right align-middle">Material (₹)</th>}
+                      <th className="py-2.5 px-3 border-r border-slate-200/80 text-left align-middle">Description of Work / Item Specification</th>
+                      {secComponents.map((c) => (
+                        <th key={c.id} className="py-2.5 px-3 border-r border-slate-200/80 text-right align-middle">
+                          {c.name} (₹)
+                        </th>
+                      ))}
                       <th className="py-2.5 px-3 text-right w-[16%] align-middle">Total (₹)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-800">
                     {secItems.map((item, idx) => {
-                      const lab = Number(item.labour || 0);
-                      const mat = Number(item.material || 0);
-                      const tot = Number(item.total || lab + mat);
+                      const rowTot = secComponents.reduce((acc, c) => {
+                        const val = item.componentRates?.[c.id] !== undefined
+                          ? Number(item.componentRates[c.id]) || 0
+                          : (c.id === "labour" ? Number(item.labour || 0) : c.id === "material" ? Number(item.material || 0) : Number(item[c.id] || 0));
+                        return acc + val;
+                      }, 0);
 
                       return (
                         <tr key={item.id || idx} className="hover:bg-slate-50/50">
                           <td className="py-2.5 px-3 border-r border-slate-200/80 text-center font-mono text-[11px] text-slate-500 align-middle">{idx + 1}</td>
                           <td className="py-2.5 px-3 border-r border-slate-200/80 font-medium whitespace-pre-wrap leading-relaxed align-middle text-left">{item.desc || item.work || item.description || "—"}</td>
-                          {showLabour && <td className="py-2.5 px-3 border-r border-slate-200/80 text-right font-mono font-medium text-slate-700 align-middle">₹{lab.toFixed(2)}</td>}
-                          {showMaterial && <td className="py-2.5 px-3 border-r border-slate-200/80 text-right font-mono font-medium text-slate-700 align-middle">₹{mat.toFixed(2)}</td>}
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 align-middle">₹{tot.toFixed(2)}</td>
+                          {secComponents.map((c) => {
+                            const val = item.componentRates?.[c.id] !== undefined
+                              ? Number(item.componentRates[c.id]) || 0
+                              : (c.id === "labour" ? Number(item.labour || 0) : c.id === "material" ? Number(item.material || 0) : Number(item[c.id] || 0));
+                            return (
+                              <td key={c.id} className="py-2.5 px-3 border-r border-slate-200/80 text-right font-mono font-medium text-slate-700 align-middle">
+                                ₹{val.toFixed(2)}
+                              </td>
+                            );
+                          })}
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 align-middle">₹{rowTot.toFixed(2)}</td>
                         </tr>
                       );
                     })}
@@ -265,8 +291,11 @@ export default function EnterpriseQuotationLayout({ data }) {
                 <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between font-bold text-xs">
                   <span className="uppercase text-[10px] tracking-wide text-slate-300">Category Rate Summary</span>
                   <div className="flex items-center gap-4 text-xs">
-                    {showLabour && <span className="text-slate-300 font-medium">Labour: <strong className="text-white font-mono">₹{secLabourTotal.toFixed(2)}</strong></span>}
-                    {showMaterial && <span className="text-slate-300 font-medium">Material: <strong className="text-white font-mono">₹{secMaterialTotal.toFixed(2)}</strong></span>}
+                    {secComponents.map((c) => (
+                      <span key={c.id} className="text-slate-300 font-medium">
+                        {c.name}: <strong className="text-white font-mono">₹{(compSubtotals[c.id] || 0).toFixed(2)}</strong>
+                      </span>
+                    ))}
                     <span className="text-emerald-400 font-black text-xs font-mono">Rate/Sqft: ₹{secRatePerSqft.toFixed(2)}</span>
                   </div>
                 </div>

@@ -59,6 +59,42 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
     throw new Error("PDF container element not found");
   }
 
+  // Requirement 10: Log the exported object before generating PDF
+  console.log("PDF Export Data", quotationData);
+
+  // Requirement 14: Validation before export
+  if (quotationData) {
+    const secs = quotationData.sections || quotationData.rateSections || [];
+    for (const sec of secs) {
+      const comps = (sec.components && sec.components.length > 0)
+        ? sec.components
+        : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
+      const rows = sec.rows || sec.items || [];
+      for (const r of rows) {
+        const expectedRowTotal = comps.reduce((acc, c) => {
+          let val = 0;
+          if (r.componentRates && r.componentRates[c.id] !== undefined && r.componentRates[c.id] !== "") {
+            val = Number(r.componentRates[c.id]) || 0;
+          } else if (c.id === "labour" && (r.labour !== undefined || r.labourRate !== undefined)) {
+            val = Number(r.labour || r.labourRate) || 0;
+          } else if (c.id === "material" && (r.material !== undefined || r.materialRate !== undefined)) {
+            val = Number(r.material || r.materialRate) || 0;
+          } else if (r[c.id] !== undefined && r[c.id] !== "") {
+            val = Number(r[c.id]) || 0;
+          }
+          return acc + val;
+        }, 0);
+
+        const actualRowTotal = Number(r.totalRate ?? r.rate ?? r.total ?? 0);
+        if (Math.abs(expectedRowTotal - actualRowTotal) > 0.01) {
+          const errMsg = `[PDF Export Validation Error] Row total mismatch for "${r.work || r.desc || r.description || 'Item'}". Expected ₹${expectedRowTotal}, got ₹${actualRowTotal}`;
+          console.error(errMsg);
+          throw new Error(errMsg);
+        }
+      }
+    }
+  }
+
   // Run pre-export verification
   validatePDFLayout(element);
 
