@@ -4,6 +4,7 @@ import {
   Calculator, Layers, ArrowUpRight, CheckCircle2, ShieldCheck, Printer
 } from "lucide-react";
 import { extractQuotationModel } from "../../utils/quotationMapper";
+import QuotationTemplate from "../quotation/QuotationTemplate";
 
 /**
  * 📊 EXCEL NATIVE SPREADSHEET TEMPLATE
@@ -374,89 +375,11 @@ export function WordNativeTemplate({ data }) {
         <span className="hover:text-slate-900">View</span>
       </div>
 
-      {/* ── 2. WORD CANVAS PAPER PAGE ── */}
-      <div className="p-8 sm:p-12 space-y-6 max-w-3xl mx-auto font-sans leading-relaxed">
-        
-        {/* Word Document Title Header */}
-        <div className="border-b-2 border-[#2B579A] pb-4">
-          <h1 className="text-2xl font-bold text-[#2B579A] tracking-tight">{companyName}</h1>
-          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-1">Official Quotation Proposal</p>
+      {/* Word Canvas Paper Page with Single Shared QuotationTemplate */}
+      <div className="p-4 sm:p-6 bg-[#F3F2F1] flex justify-center">
+        <div className="bg-white shadow-xl rounded-xl border border-slate-300 overflow-hidden w-full max-w-[794px]">
+          <QuotationTemplate data={data} />
         </div>
-
-        {/* Meta Info Grid */}
-        <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-200">
-          <div>
-            <p className="text-slate-400 font-bold uppercase text-[10px]">Prepared For</p>
-            <p className="font-bold text-slate-900 text-sm mt-0.5">{customerName}</p>
-            <p className="text-slate-600 font-medium">{projectTitle}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-slate-400 font-bold uppercase text-[10px]">Reference Details</p>
-            <p className="font-bold font-mono text-slate-900 text-sm mt-0.5">{refNo}</p>
-            <p className="text-slate-600 font-medium">{dateStr}</p>
-          </div>
-        </div>
-
-        {/* Scope of Work Heading */}
-        <div>
-          <h2 className="text-sm font-bold text-[#2B579A] uppercase tracking-wider mb-2 border-b border-slate-200 pb-1">
-            1. Scope of Work &amp; Pricing Breakdown
-          </h2>
-
-          <table className="w-full text-xs text-left border-collapse border border-slate-300">
-            <thead>
-              <tr className="bg-[#2B579A] text-white font-bold">
-                <th className="p-2 border border-slate-300 text-center w-10">#</th>
-                <th className="p-2 border border-slate-300">Description</th>
-                <th className="p-2 border border-slate-300 text-center w-14">Qty</th>
-                <th className="p-2 border border-slate-300 text-right w-24">Rate</th>
-                <th className="p-2 border border-slate-300 text-right w-24">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, idx) => (
-                <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50">
-                  <td className="p-2 border border-slate-300 text-center font-mono">{idx + 1}</td>
-                  <td className="p-2 border border-slate-300 font-medium">{item.description || `Item ${idx + 1}`}</td>
-                  <td className="p-2 border border-slate-300 text-center font-mono">{item.quantity || 1}</td>
-                  <td className="p-2 border border-slate-300 text-right font-mono">{currencySymbol}{(parseFloat(item.materialRate || item.rate || 0)).toLocaleString()}</td>
-                  <td className="p-2 border border-slate-300 text-right font-mono font-bold">{currencySymbol}{(parseFloat(item.amount || item.totalPrice || 0)).toLocaleString()}</td>
-                </tr>
-              ))}
-              <tr className="bg-slate-50 font-bold border-t-2 border-slate-300">
-                <td colSpan={4} className="p-2 text-right border border-slate-300">Subtotal</td>
-                <td className="p-2 text-right font-mono border border-slate-300">{currencySymbol}{subtotal.toLocaleString()}</td>
-              </tr>
-              {discount > 0 && (
-                <tr className="bg-slate-50 text-rose-600 font-bold">
-                  <td colSpan={4} className="p-2 text-right border border-slate-300">Discount</td>
-                  <td className="p-2 text-right font-mono border border-slate-300">-{currencySymbol}{discount.toLocaleString()}</td>
-                </tr>
-              )}
-              <tr className="bg-slate-50 font-bold">
-                <td colSpan={4} className="p-2 text-right border border-slate-300">GST (18%)</td>
-                <td className="p-2 text-right font-mono border border-slate-300">+{currencySymbol}{tax.toLocaleString()}</td>
-              </tr>
-              <tr className="bg-[#2B579A] text-white font-extrabold text-sm">
-                <td colSpan={4} className="p-2.5 text-right border border-slate-300 uppercase">Grand Total</td>
-                <td className="p-2.5 text-right font-mono border border-slate-300">{currencySymbol}{grandTotal.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Terms & Signature Section */}
-        <div className="pt-4 border-t border-slate-200 space-y-4">
-          <h2 className="text-sm font-bold text-[#2B579A] uppercase tracking-wider border-b border-slate-200 pb-1">
-            2. Standard Terms &amp; Conditions
-          </h2>
-          <p className="text-xs text-slate-600 leading-relaxed italic">
-            1. Quotation valid for 30 days from date of issue.<br />
-            2. Work will commence within 3 business days of receiving advance payment.<br />
-            3. Any change in scope will be charged extra.
-          </p>
-        </div>
-
       </div>
     </div>
   );

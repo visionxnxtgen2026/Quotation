@@ -17,42 +17,10 @@ import {
 import { localDB } from "../../utils/localDB";
 import { normalizeQuotationData } from "../../utils/quotationMapper";
 import { admobManager } from "../../utils/admobManager";
+import QuotationTemplate from "../../components/quotation/QuotationTemplate";
 import { exportEnterprisePDF } from "../../utils/pdfExporter";
-import {
-  CorporateBlueTemplate,
-  MinimalWhiteTemplate,
-  ConstructionTemplate,
-  LuxuryGoldTemplate,
-  PaintContractorTemplate,
-  ModernGradientTemplate,
-  ExecutiveProposalTemplate,
-  InvoiceHybridTemplate,
-  ClassicBusinessTemplate,
-  CreativeStudioTemplate
-} from "../../components/theme/PDFTemplatesCollection";
 
-const pdfTemplateMap = {
-  "corporate-blue": CorporateBlueTemplate,
-  "minimal-white": MinimalWhiteTemplate,
-  "construction-yellow": ConstructionTemplate,
-  "luxury-gold": LuxuryGoldTemplate,
-  "paint-contractor": PaintContractorTemplate,
-  "modern-gradient": ModernGradientTemplate,
-  "executive-proposal": ExecutiveProposalTemplate,
-  "invoice-hybrid": InvoiceHybridTemplate,
-  "classic-business": ClassicBusinessTemplate,
-  "creative-studio": CreativeStudioTemplate,
-  corporateblue: CorporateBlueTemplate,
-  minimalwhite: MinimalWhiteTemplate,
-  construction: ConstructionTemplate,
-  luxurygold: LuxuryGoldTemplate,
-  paintcontractor: PaintContractorTemplate,
-  moderngradient: ModernGradientTemplate,
-  executiveproposal: ExecutiveProposalTemplate,
-  invoicehybrid: InvoiceHybridTemplate,
-  classicbusiness: ClassicBusinessTemplate,
-  creativestudio: CreativeStudioTemplate,
-};
+const PDFComponent = QuotationTemplate;
 
 export default function ExportSharePage({
   goBack,
@@ -135,8 +103,7 @@ export default function ExportSharePage({
   const [showDesktopFallback, setShowDesktopFallback] = useState(false);
 
   const templateRef = useRef(null);
-  const selectedTemplate = quotationData?.template || localStorage.getItem("activeExportTemplate") || "corporate-blue";
-  const PDFComponent = pdfTemplateMap[selectedTemplate] || CorporateBlueTemplate;
+  const PDFComponent = QuotationTemplate;
 
   // 📄 8. REAL DOWNLOAD PDF IMPLEMENTATION
   const handleDownloadPdf = async () => {
@@ -497,7 +464,7 @@ export default function ExportSharePage({
       {mappedData && (
         <div style={{ position: "absolute", left: "-9999px", top: "-9999px" }}>
           <div ref={templateRef} style={{ width: "794px" }} className="bg-white">
-            <PDFComponent data={mappedData} />
+            <PDFComponent data={mappedData} templateKey={quotationData?.template || localStorage.getItem("activeExportTemplate") || "corporate-blue"} />
           </div>
         </div>
       )}

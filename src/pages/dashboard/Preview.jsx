@@ -28,6 +28,7 @@ import {
 } from "../../components/theme/PDFTemplatesCollection";
 import { ExcelNativeTemplate, WordNativeTemplate, ImageNativeTemplate } from "../../components/theme/NativeFormatPreviews";
 
+import QuotationTemplate from "../../components/quotation/QuotationTemplate";
 import NativeExportShareSheet from "../../components/export/NativeExportShareSheet";
 import { admobManager } from "../../utils/admobManager";
 import { localDB } from "../../utils/localDB";
@@ -35,34 +36,8 @@ import { normalizeQuotationData } from "../../utils/quotationMapper";
 import { getTemplateDetails, getDefaultTemplateForFormat } from "../../utils/templateRegistry";
 import { Download, Edit3, AlertCircle, Share2 } from "lucide-react";
 
-// Renderer Dictionary
-const templateMap = {
-  corporateblue: CorporateBlueTemplate,
-  minimalwhite: MinimalWhiteTemplate,
-  construction: ConstructionTemplate,
-  luxurygold: LuxuryGoldTemplate,
-  paintcontractor: PaintContractorTemplate,
-  moderngradient: ModernGradientTemplate,
-  executiveproposal: ExecutiveProposalTemplate,
-  invoicehybrid: InvoiceHybridTemplate,
-  classicbusiness: ClassicBusinessTemplate,
-  creativestudio: CreativeStudioTemplate,
-
-  // Fallbacks
-  modern: CorporateBlueTemplate,
-  compact: MinimalWhiteTemplate,
-  creative: CreativeStudioTemplate,
-  grouped: ConstructionTemplate,
-  obsidian: LuxuryGoldTemplate,
-  sovereign: LuxuryGoldTemplate,
-  executive: ExecutiveProposalTemplate,
-  businesspro: CorporateBlueTemplate,
-  contractor: ConstructionTemplate,
-  signature: ModernGradientTemplate,
-  corporate: CorporateBlueTemplate,
-  enterprise: ExecutiveProposalTemplate,
-  classic: ClassicBusinessTemplate,
-};
+// Master Shared Renderer
+const TemplateComponent = QuotationTemplate;
 
 export default function Preview({
   goBack, goToDashboard, goToCreate, goToExport,
@@ -233,9 +208,7 @@ export default function Preview({
     if (goToCreate) goToCreate(targetStep);
   };
 
-  // Determine template component using templateRegistry mapping
-  const tplDetails = getTemplateDetails(selectedTemplate);
-  const TemplateComponent = templateMap[tplDetails.rendererKey] || templateMap[selectedTemplate] || EnterpriseQuotationLayout;
+  const TemplateComponent = QuotationTemplate;
   const effectiveScale = scale * userZoom;
 
   return (
@@ -294,7 +267,7 @@ export default function Preview({
                     }}
                     className="bg-white text-slate-900 font-sans p-1"
                   >
-                    <TemplateComponent data={mappedData} />
+                    <TemplateComponent data={mappedData} templateKey={selectedTemplate} />
                   </div>
                 </div>
               </ImageNativeTemplate>
@@ -320,7 +293,7 @@ export default function Preview({
                 }}
                 className="bg-white text-slate-900 font-sans p-1"
               >
-                <TemplateComponent data={mappedData} />
+                <TemplateComponent data={mappedData} templateKey={selectedTemplate} />
               </div>
             </div>
           )

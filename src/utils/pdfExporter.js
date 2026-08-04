@@ -59,17 +59,24 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
     throw new Error("PDF container element not found");
   }
 
-  // Requirement 10: Log the exported object before generating PDF
+  const activeTpl = quotationData?.template || localStorage.getItem("activeExportTemplate") || "corporate-blue";
+  console.log("Selected Template:", activeTpl);
+  console.log("Template Rendered:", activeTpl);
   console.log("PDF Export Data", quotationData);
 
-  // Requirement 14: Validation before export
+  // Requirement 14: Comprehensive Pre-Export Data Validation
   if (quotationData) {
+    const mismatches = [];
     const secs = quotationData.sections || quotationData.rateSections || [];
+    let expectedCategoryGrandTotal = 0;
+
     for (const sec of secs) {
       const comps = (sec.components && sec.components.length > 0)
         ? sec.components
         : [{ id: "labour", name: "Labour" }, { id: "material", name: "Material" }];
       const rows = sec.rows || sec.items || [];
+      let secComputedRate = 0;
+
       for (const r of rows) {
         const expectedRowTotal = comps.reduce((acc, c) => {
           let val = 0;
@@ -85,13 +92,26 @@ export async function exportEnterprisePDF(element, filename = "Quotation.pdf", q
           return acc + val;
         }, 0);
 
+        secComputedRate += expectedRowTotal;
         const actualRowTotal = Number(r.totalRate ?? r.rate ?? r.total ?? 0);
         if (Math.abs(expectedRowTotal - actualRowTotal) > 0.01) {
-          const errMsg = `[PDF Export Validation Error] Row total mismatch for "${r.work || r.desc || r.description || 'Item'}". Expected ₹${expectedRowTotal}, got ₹${actualRowTotal}`;
-          console.error(errMsg);
-          throw new Error(errMsg);
+          mismatches.push(`Row total mismatch for "${r.work || r.desc || r.description || 'Item'}" (Expected: ₹${expectedRowTotal}, Actual: ₹${actualRowTotal})`);
         }
       }
+
+      const area = Number(sec.workingArea || 0);
+      const expectedCategoryAmount = area > 0 ? (area * secComputedRate) : secComputedRate;
+      expectedCategoryGrandTotal += expectedCategoryAmount;
+
+      const actualCategoryAmount = Number(sec.estimatedAmount ?? sec.sectionTotal ?? 0);
+      if (actualCategoryAmount > 0 && Math.abs(expectedCategoryAmount - actualCategoryAmount) > 0.01) {
+        mismatches.push(`Category total mismatch for "${sec.title || 'Category'}" (Expected: ₹${expectedCategoryAmount}, Actual: ₹${actualCategoryAmount})`);
+      }
+    }
+
+    if (mismatches.length > 0) {
+      console.error("[Export Data Validation Mismatch]", mismatches);
+      throw new Error(`Export stopped due to data validation mismatch:\n${mismatches.join("\n")}`);
     }
   }
 

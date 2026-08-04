@@ -1,6 +1,6 @@
 import React from "react";
-import EnterpriseQuotationLayout from "./EnterpriseQuotationLayout";
+import QuotationTemplate from "../quotation/QuotationTemplate";
 
 export default function ClassicTemplate({ data }) {
-  return <EnterpriseQuotationLayout data={data} />;
+  return <QuotationTemplate data={data} />;
 }

@@ -29,30 +29,9 @@ import {
   Image as ImageIcon, Loader2, ExternalLink, Printer
 } from "lucide-react";
 
-// PDF Renderer Dictionary
-const pdfTemplateMap = {
-  "corporate-blue": CorporateBlueTemplate,
-  "minimal-white": MinimalWhiteTemplate,
-  "construction-yellow": ConstructionTemplate,
-  "luxury-gold": LuxuryGoldTemplate,
-  "paint-contractor": PaintContractorTemplate,
-  "modern-gradient": ModernGradientTemplate,
-  "executive-proposal": ExecutiveProposalTemplate,
-  "invoice-hybrid": InvoiceHybridTemplate,
-  "classic-business": ClassicBusinessTemplate,
-  "creative-studio": CreativeStudioTemplate,
-  // Fallbacks
-  corporateblue: CorporateBlueTemplate,
-  minimalwhite: MinimalWhiteTemplate,
-  construction: ConstructionTemplate,
-  luxurygold: LuxuryGoldTemplate,
-  paintcontractor: PaintContractorTemplate,
-  moderngradient: ModernGradientTemplate,
-  executiveproposal: ExecutiveProposalTemplate,
-  invoicehybrid: InvoiceHybridTemplate,
-  classicbusiness: ClassicBusinessTemplate,
-  creativestudio: CreativeStudioTemplate,
-};
+import QuotationTemplate from "../../components/quotation/QuotationTemplate";
+
+const PDFComponent = QuotationTemplate;
 
 export default function ExportCenterPage({
   goBack, goToDashboard, goToCreate, goToPreview, quotationId
@@ -226,7 +205,7 @@ export default function ExportCenterPage({
     window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, "_self");
   };
 
-  const PDFComponent = pdfTemplateMap[selectedTemplate] || CorporateBlueTemplate;
+  const PDFComponent = QuotationTemplate;
 
   return (
     <div className="bg-[#F8FAFC] min-h-screen font-sans pb-32 relative">
@@ -499,6 +478,15 @@ export default function ExportCenterPage({
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Offscreen Template Renderer for Enterprise PDF Generation */}
+      {mappedData && (
+        <div style={{ position: "absolute", left: "-9999px", top: "-9999px" }}>
+          <div ref={templateRef} style={{ width: "794px" }} className="bg-white">
+            <PDFComponent data={mappedData} templateKey={selectedTemplate} />
           </div>
         </div>
       )}
